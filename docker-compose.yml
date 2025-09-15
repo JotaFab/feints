@@ -1,0 +1,15 @@
+services:
+  web:
+
+    build:
+      context: .
+      # Correct the path to your Dockerfile
+      dockerfile: Dockerfile
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+    develop:
+      watch:
+        - action: rebuild
+          path: ./
+          target: /home/feints/app
+
