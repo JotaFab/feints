@@ -3,6 +3,4 @@ IMAGE_NAME=feints-bot
 
 
 run:
-	docker-compose up --watch
-
-
+	docker-compose up --build

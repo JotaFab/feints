@@ -1,15 +1,11 @@
 services:
   web:
-
+    container_name: discord-music-bot
     build:
       context: .
-      # Correct the path to your Dockerfile
       dockerfile: Dockerfile
+    volumes:
+      - .:/app                # Mount local code to container
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
-    develop:
-      watch:
-        - action: rebuild
-          path: ./
-          target: /home/feints/app
 

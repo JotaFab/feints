@@ -1,32 +1,44 @@
-FROM debian:bullseye
+FROM alpine:latest
 
-
-# Install system dependencies
-RUN apt-get update && \
-	apt-get install -y wget curl python3 python3-pip ffmpeg ca-certificates && \
-	rm -rf /var/lib/apt/lists/*
+# Install system dependencies (Python >= 3.11, ffmpeg, git, curl, wget, bash, build tools)
+RUN apk add --no-cache \
+    bash \
+    wget \
+    curl \
+    git \
+    ffmpeg \
+    python3 \
+    py3-pip \
+    ca-certificates \
+    build-base \
+    && pip3 install --no-cache --break-system-packages --upgrade pip setuptools wheel \
+    && update-ca-certificates
 
 # Install Go
 RUN wget https://go.dev/dl/go1.25.1.linux-amd64.tar.gz && \
-	tar -C /usr/local -xzf go1.25.1.linux-amd64.tar.gz && \
-	rm go1.25.1.linux-amd64.tar.gz
-ENV PATH="/usr/local/go/bin:$PATH"
+    tar -C /usr/local -xzf go1.25.1.linux-amd64.tar.gz && \
+    rm go1.25.1.linux-amd64.tar.gz
+ENV PATH="/usr/local/go/bin:/go/bin:/home/user/go/bin:$PATH"
+ENV GOPATH="/go"
+ENV PATH="$GOPATH/bin:$PATH"
 
 # Install yt-dlp
-RUN pip3 install yt-dlp
+RUN pip3 install --no-cache --break-system-packages -U "yt-dlp[default]"
 
-# Create non-root user for app
-RUN useradd -ms /bin/bash feints
-USER feints
-WORKDIR /home/feints/app
+WORKDIR /app
+
+# Copy Go module files first for caching
+COPY go.mod ./
+# Copy go.sum only if it exists
+# COPY go.sum ./
+RUN go mod download || true
+
+# Install Air (hot reload)
+RUN go install github.com/air-verse/air@latest
 
 # Copy source files
-COPY --chown=feints:feints . .
-
-# Download Go dependencies
-RUN go mod download
+COPY . .
 
 RUN go mod tidy
-# Default command (customize as needed)
-RUN go build /home/feints/app/cmd/bot/main.go
-CMD ["./main"]
+
+CMD ["air", "-c", ".air.toml"]
