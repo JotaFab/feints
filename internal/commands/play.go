@@ -8,63 +8,49 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"feints/internal/player"
-	"feints/internal/queue"
 )
 
-var Players = make(map[string]*player.Player) // un player por guild
-
 // PlayCommand reproduce o añade una canción a la cola
-func PlayCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	
-	userID := i.Member.User.ID
-	guildID := i.GuildID
-
-	// buscar canal de voz del usuario
-	var voiceChannelID string
-	guild, err := s.State.Guild(guildID)
-	if err != nil {
-		return
-	}
-	for _, vs := range guild.VoiceStates {
-		if vs.UserID == userID {
-			voiceChannelID = vs.ChannelID
-			break
-		}
-	}
-	if voiceChannelID == "" {
+func PlayCommand(dp *player.DiscordPlayer, s *discordgo.Session, i *discordgo.InteractionCreate) {
+	// Obtener argumento (canción / búsqueda)
+	options := i.ApplicationCommandData().Options
+	if len(options) == 0 {
 		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
-				Content: "❌ No estás en un canal de voz.",
+				Content: "❌ No se proporcionó ninguna canción.",
 			},
 		})
 		return
 	}
 
-	// crear player si no existe
-	p, ok := Players[guildID]
-	if !ok {
-		p, err = player.NewPlayer(s, guildID, voiceChannelID)
-		if err != nil {
-			log.Errorf("Error creando player: %v", err)
-			return
-		}
-		Players[guildID] = p
-	}
-
-	// obtener argumento (canción / búsqueda)
-	query := i.ApplicationCommandData().Options[0].StringValue()
+	query := options[0].StringValue()
 	if query == "" {
+		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ La búsqueda no puede estar vacía.",
+			},
+		})
 		return
 	}
 
-	// añadir canción
-	p.PlaySong(queue.Song{
-		Title: query, // podrías enriquecer con yt-dlp metadata
+	// Añadir canción a la cola
+	if err := dp.PlaySong(player.Song{
+		Title: query, // se puede enriquecer con metadatos de yt-dlp si quieres
 		URL:   query,
-	})
+	}); err != nil {
+		log.Errorf("Error agregando canción: %v", err)
+		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Error agregando canción a la cola.",
+			},
+		})
+		return
+	}
 
-	// responder
+	// Responder al usuario
 	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{

@@ -4,15 +4,13 @@ import (
 	"fmt"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/kkdai/youtube/v2"
 	log "github.com/sirupsen/logrus"
 
 	"feints/internal/player"
-	"feints/internal/queue"
 )
 
 // TestCommand fills the queue with real YouTube songs
-func TestCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+func TestCommand(dp *player.DiscordPlayer, s *discordgo.Session, i *discordgo.InteractionCreate) {
 	// Obtener el usuario que ejecuta el comando
 	userID := i.Member.User.ID
 	guildID := i.GuildID
@@ -35,19 +33,6 @@ func TestCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		return
 	}
 
-	
-	// crear player si no existe
-	p, ok := Players[guildID]
-	if !ok {
-		p, err = player.NewPlayer(s, guildID, voiceChannelID)
-		if err != nil {
-			log.Errorf("Error creando player: %v", err)
-			return
-		}
-		Players[guildID] = p
-	}
-	client := youtube.Client{}
-
 	// Lista de canciones de prueba
 	testSongs := []string{
 		"https://www.youtube.com/watch?v=6JCLY0Rlx6Q", // Milky Chance - Colorado
@@ -58,21 +43,12 @@ func TestCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 
 	for _, url := range testSongs {
-		video, err := client.GetVideo(url)
-		if err != nil {
-			log.Warnf("Error obteniendo info de %s: %v", url, err)
-			continue
-		}
 
-		// Aquí usamos directamente context.Song
-		p.PlaySong(queue.Song{
-			Title: video.Title,
+		dp.PlaySong(player.Song{
+			Title: url,
 			URL:   url,
 		})
 
-	
-
-		log.Infof("Encolada: %s | Autor: %s | %d seg", video.Title, video.Author, int(video.Duration.Seconds()))
 	}
 
 	// Responder en Discord

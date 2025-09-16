@@ -1,12 +1,7 @@
-package queue
+package player
 
 import "sync"
 
-// Song representa una canción en la cola
-type Song struct {
-	Title string
-	URL   string
-}
 
 // SongQueue es una cola segura para concurrencia (FIFO)
 type SongQueue struct {

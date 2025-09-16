@@ -1,78 +1,64 @@
 package commands
 
 import (
-	"bytes"
-	"fmt"
+	"encoding/json"
 	"log"
 	"os/exec"
-	"strings"
 
 	"github.com/bwmarrin/discordgo"
 )
 
-// runYtDlpSearch ejecuta yt-dlp con una búsqueda y devuelve títulos y URLs
-func runYtDlpSearch(query string, max int) ([]string, []string, error) {
-	// yt-dlp "ytsearch5:bohemian rhapsody" --get-title --get-id
-	arg := fmt.Sprintf("ytsearch%d:%s", max, query)
-	cmd := exec.Command("yt-dlp", arg, "--get-title", "--get-id")
-
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	err := cmd.Run()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines)%2 != 0 {
-		return nil, nil, fmt.Errorf("unexpected yt-dlp output format")
-	}
-
-	titles := []string{}
-	urls := []string{}
-	for i := 0; i < len(lines); i += 2 {
-		titles = append(titles, lines[i])
-		urls = append(urls, "https://www.youtube.com/watch?v="+lines[i+1])
-	}
-
-	return titles, urls, nil
-}
-
-// SearchCmd maneja el autocompletado en /play search
-func SearchCmd(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	// Solo manejar si es autocompletado
-	if i.Type != discordgo.InteractionApplicationCommandAutocomplete {
-		return
-	}
-
-	// Extraer query
-	var query string
-	for _, opt := range i.ApplicationCommandData().Options {
-		if opt.Name == "search" {
-			query = opt.StringValue()
-		}
-	}
-
+// SearchCommand maneja el autocompletado de /play search
+func SearchCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	query := i.ApplicationCommandData().Options[0].StringValue()
+	log.Println("[SearchCommand] Query recibida:", query)
 	if query == "" {
+		log.Println("[SearchCommand] Query vacía, saliendo")
 		return
 	}
 
-	titles, urls, err := runYtDlpSearch(query, 5)
-	log.Print(titles)
+	// Ejecutar yt-dlp para obtener resultados en JSON
+	cmd := exec.Command("yt-dlp", "--dump-json", "--flat-playlist", "ytsearch5:"+query)
+	out, err := cmd.Output()
 	if err != nil {
-		fmt.Println("yt-dlp error:", err)
+		log.Println("[SearchCommand] Error ejecutando yt-dlp:", err)
 		return
 	}
+	log.Println("[SearchCommand] yt-dlp ejecutado correctamente")
 
-	choices := []*discordgo.ApplicationCommandOptionChoice{}
-	for idx, title := range titles {
+	// Cada línea es un JSON de resultado
+	lines := string(out)
+	var choices []*discordgo.ApplicationCommandOptionChoice
+	for idx, line := range splitLines(lines) {
+		if idx >= 25 {
+			break
+		}
+
+		var video struct {
+			Title      string `json:"title"`
+			WebpageURL string `json:"url"`
+		}
+		if err := json.Unmarshal([]byte(line), &video); err != nil {
+			log.Println("[SearchCommand] Error parseando línea JSON:", err)
+			continue
+		}
+
+		name := video.Title
+		if len(name) > 100 {
+			name = name[:100]
+		}
+		log.Printf("[SearchCommand] Añadiendo choice: %s -> %s\n", name, video.WebpageURL)
 		choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
-			Name:  title,
-			Value: urls[idx], // aquí devolvemos el link como valor
+			Name:  name,
+			Value: video.WebpageURL,
 		})
 	}
 
-	// Responder con sugerencias
+	if len(choices) == 0 {
+		log.Println("[SearchCommand] No se encontraron resultados")
+	}
+
+	// Enviar resultados al usuario
 	err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionApplicationCommandAutocompleteResult,
 		Data: &discordgo.InteractionResponseData{
@@ -80,6 +66,26 @@ func SearchCmd(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		},
 	})
 	if err != nil {
-		fmt.Println("autocomplete respond error:", err)
+		log.Println("[SearchCommand] Error enviando autocompletado:", err)
+	} else {
+		log.Println("[SearchCommand] Autocompletado enviado correctamente")
 	}
+}
+
+// splitLines separa cada línea de salida de yt-dlp
+func splitLines(s string) []string {
+	var res []string
+	start := 0
+	for i, c := range s {
+		if c == '\n' {
+			if start < i {
+				res = append(res, s[start:i])
+			}
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		res = append(res, s[start:])
+	}
+	return res
 }
