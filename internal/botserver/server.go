@@ -3,11 +3,14 @@ package botserver
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/bwmarrin/discordgo"
+
+	"feints/internal/commands"
 )
 
 // Run inicializa el bot y maneja los eventos
@@ -22,7 +25,70 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("error creando sesión de Discord: %v", err)
 	}
+	// Después de crear la sesión dg := discordgo.New("Bot " + token)
+	dg.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
+		fmt.Println("✅ Bot conectado como", s.State.User.Username)
 
+		commands := []*discordgo.ApplicationCommand{
+			{
+				Name:        "play",
+				Description: "Reproduce una canción",
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Type:         discordgo.ApplicationCommandOptionString,
+						Name:         "search",
+						Description:  "Nombre o URL de la canción",
+						Required:     true,
+						Autocomplete: true,
+					},
+				},
+			},
+			{
+				Name:        "stop",
+				Description: "Detiene la reproducción y se desconecta",
+			},
+			{
+				Name:        "queue",
+				Description: "Muestra la cola de canciones",
+			},
+			{
+				Name:        "skip",
+				Description: "Salta a la siguiente canción",
+			},
+			{
+				Name:        "clear",
+				Description: "Limpia la cola",
+			},
+			{
+				Name:        "status",
+				Description: "Muestra el estado actual",
+			},
+			{
+				Name:        "test",
+				Description: "Prueba de carga en la cola",
+			},
+		}
+
+		// Registrar todos los comandos en la aplicación (globales)
+		for _, cmd := range commands {
+			_, err := s.ApplicationCommandCreate(s.State.User.ID, "", cmd)
+			if err != nil {
+				fmt.Printf("❌ Error registrando comando %s: %v\n", cmd.Name, err)
+			} else {
+				fmt.Printf("✅ Comando /%s registrado\n", cmd.Name)
+			}
+		}
+	})
+		// Handler para autocompletado
+	dg.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		if i.Type == discordgo.InteractionApplicationCommandAutocomplete {
+			log.Println(i.ApplicationCommandData().Options[0].StringValue())
+			switch i.ApplicationCommandData().Name {
+			case "play":
+				commands.SearchCmd(s, i)
+			}
+		}
+	})
 	// Registrar handler de interacciones
 	dg.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		// Aquí deberíamos mapear el nombre del comando a nuestro Command enum
@@ -33,12 +99,14 @@ func Run() error {
 			HandleCommand(CmdStop, s, i)
 		case "queue":
 			HandleCommand(CmdQueue, s, i)
-		case "next":
-			HandleCommand(CmdNext, s, i)
+		case "skip":
+			HandleCommand(CmdSkip, s, i)
 		case "clear":
 			HandleCommand(CmdClear, s, i)
 		case "status":
 			HandleCommand(CmdStatus, s, i)
+		case "test":
+			HandleCommand(CmdTest, s, i)
 		}
 	})
 

@@ -1,4 +1,4 @@
-package context
+package queue
 
 import "sync"
 
@@ -8,7 +8,7 @@ type Song struct {
 	URL   string
 }
 
-// SongQueue estructura básica de cola de canciones
+// SongQueue es una cola segura para concurrencia (FIFO)
 type SongQueue struct {
 	songs []Song
 	mu    sync.Mutex
@@ -55,4 +55,20 @@ func (q *SongQueue) Len() int {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return len(q.songs)
+}
+
+// List devuelve una copia de las canciones en la cola
+func (q *SongQueue) List() []Song {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	copied := make([]Song, len(q.songs))
+	copy(copied, q.songs)
+	return copied
+}
+
+// Clear elimina todas las canciones de la cola
+func (q *SongQueue) Clear() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.songs = []Song{}
 }
