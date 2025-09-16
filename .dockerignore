@@ -33,6 +33,6 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
-tmp/main
+tmp/
 .gitignore
 go.sum
