@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -51,14 +52,6 @@ func YtdlpVersion() (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
-// YtdlpMetadataSong obtiene metadatos JSON de un video/canción.
-func YtdlpMetadataSong(url string) (string, error) {
-	out, stderr, err := runYtDlp("--cookies", "cookies.txt","--dump-json", "--flat-playlist", url)
-	if err != nil {
-		return "", fmt.Errorf("yt-dlp metadata error: %v - %s", err, stderr)
-	}
-	return out, nil
-}
 
 // YtdlpSearch busca en YouTube y devuelve resultados JSON.
 func YtdlpSearch(query string, limit int) ([]string, error) {
@@ -94,9 +87,9 @@ func parseDurationSec(s string) time.Duration {
 // YtdlpBestAudioURL descarga y embebe metadatos en el MP3
 func YtdlpBestAudioURL(videoURL string) (string, error) {
 	// 1. Obtener metadata mínima con yt-dlp
-	out, _, err := runYtDlp("--flat-playlist",
+	out, _, err := runYtDlp(
 		"--cookies", "cookies.txt",
-
+		"--flat-playlist",
 		"--print", "%(title)s|%(uploader)s|%(duration)s|%(thumbnail)s",
 		videoURL,
 	)
@@ -121,7 +114,13 @@ func YtdlpBestAudioURL(videoURL string) (string, error) {
 	fileName := fmt.Sprintf("%s - %s.mp3", meta.Uploader, safeTitle)
 	filePath := filepath.Join("songs", fileName)
 
-	// 2. Descargar audio como MP3
+	// 2. Verificar si ya existe
+	if _, err := os.Stat(filePath); err == nil {
+		log.Printf("[yt-dlp] Archivo ya existe, no se descarga: %s", filePath)
+		return "songs/" + fileName, nil
+	}
+
+	// 3. Descargar audio como MP3
 	args := []string{
 		"--cookies", "cookies.txt",
 		"-f", "bestaudio",
@@ -133,7 +132,7 @@ func YtdlpBestAudioURL(videoURL string) (string, error) {
 		return "", fmt.Errorf("yt-dlp download error: %w", err)
 	}
 
-	// 3. Escribir metadatos ID3 en el MP3
+	// 4. Escribir metadatos ID3 en el MP3
 	tag, err := id3v2.Open(filePath, id3v2.Options{Parse: true})
 	if err != nil {
 		return "", fmt.Errorf("error abriendo MP3 para metadata: %w", err)
@@ -157,5 +156,6 @@ func YtdlpBestAudioURL(videoURL string) (string, error) {
 	}
 
 	log.Printf("[yt-dlp] Descarga + metadata completada: %s", filePath)
-	return filePath, nil
+	return "/songs/" + fileName, nil
 }
+
