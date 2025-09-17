@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
-	"strings"
 	"sync"
 
 	"github.com/bwmarrin/discordgo"
@@ -136,7 +135,7 @@ func (p *DiscordPlayer) loop() {
 		p.current = next
 		p.Unlock()
 
-		if err := p.streamSong(next.URL); err != nil {
+		if err := p.streamUrlSong(next.URL); err != nil {
 			fmt.Println("Error streaming:", err)
 		}
 	}
@@ -149,17 +148,9 @@ func (p *DiscordPlayer) loop() {
 }
 
 // streamSong usa yt-dlp + ffmpeg y envía audio a Discord
-func (p *DiscordPlayer) streamSong(query string) error {
-	ytCmd := exec.Command("yt-dlp", "-f", "bestaudio", "-g", "ytsearch:"+query)
-	out, err := ytCmd.Output()
-	if err != nil {
-		return fmt.Errorf("yt-dlp failed: %w", err)
-	}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	if len(lines) == 0 {
-		return fmt.Errorf("no se encontró audio")
-	}
-	audioURL := lines[0]
+func (p *DiscordPlayer) streamUrlSong(query string) error {
+	audioURL , err := YtdlpBestAudioURL(query)
+	if err != nil { return err }
 
 	ffmpegCmd := exec.Command("ffmpeg",
 		"-i", audioURL,

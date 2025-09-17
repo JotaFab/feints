@@ -88,7 +88,8 @@ func (bs *BotServer) HandleCommand(cmd string, s *discordgo.Session, i *discordg
 	case "status":
 		commands.StatusCommand(dp, s, i)
 	case "test":
-		commands.TestCommand(dp, s, i)
+		// commands.TestCommand(dp, s, i)
+		//commands.TestMultiVoiceCommand(bs.PlayerManager, s,i)
 	}
 }
 
