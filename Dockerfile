@@ -1,3 +1,19 @@
+FROM golang:1.25-alpine AS builder
+
+WORKDIR /app
+
+# Dependencias necesarias para compilar Go
+RUN apk add --no-cache git build-base
+
+# Copiar mod files primero (cache)
+COPY . .
+RUN go mod tidy
+
+# Copiar código fuente
+
+# Compilar binario
+RUN go build -o /app/tmp/main ./cmd/main.go
+
 FROM alpine:latest
 
 # Install system dependencies (Python >= 3.11, ffmpeg, git, curl, wget, bash, build tools)
@@ -24,21 +40,15 @@ ENV PATH="$GOPATH/bin:$PATH"
 
 # Install yt-dlp
 RUN pip3 install --no-cache --break-system-packages -U "yt-dlp[default]"
-
-WORKDIR /app
-
-# Copy Go module files first for caching
-COPY go.mod ./
-# Copy go.sum only if it exists
-# COPY go.sum ./
-RUN go mod download || true
-
 # Install Air (hot reload)
 RUN go install github.com/air-verse/air@latest
 
-# Copy source files
-COPY . .
+WORKDIR /app
 
+COPY --from=builder /app/tmp/main .
+COPY . .
+# Copy source files
 RUN go mod tidy
 
-CMD ["air", "-c", ".air.toml"]
+
+

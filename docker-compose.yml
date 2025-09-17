@@ -9,3 +9,6 @@ services:
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
 
+    entrypoint: ["air"]
+    command: ["-c", ".air.toml"]
+
