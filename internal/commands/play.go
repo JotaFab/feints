@@ -5,13 +5,12 @@ import (
 	"fmt"
 
 	"github.com/bwmarrin/discordgo"
-	log "github.com/sirupsen/logrus"
 
 	"feints/internal/player"
 )
 
 // PlayCommand reproduce o añade una canción a la cola
-func PlayCommand(dp *player.DiscordPlayer, s *discordgo.Session, i *discordgo.InteractionCreate) {
+func PlayCommand(dp player.Player, s *discordgo.Session, i *discordgo.InteractionCreate) {
 	// Obtener argumento (canción / búsqueda)
 	options := i.ApplicationCommandData().Options
 	if len(options) == 0 {
@@ -36,19 +35,12 @@ func PlayCommand(dp *player.DiscordPlayer, s *discordgo.Session, i *discordgo.In
 	}
 
 	// Añadir canción a la cola
-	if err := dp.PlaySong(player.Song{
+	dp.AddToQueue(player.Song{
 		Title: query, // se puede enriquecer con metadatos de yt-dlp si quieres
 		URL:   query,
-	}); err != nil {
-		log.Errorf("Error agregando canción: %v", err)
-		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "❌ Error agregando canción a la cola.",
-			},
-		})
-		return
-	}
+	})
+	dp.Play()
+	
 
 	// Responder al usuario
 	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{

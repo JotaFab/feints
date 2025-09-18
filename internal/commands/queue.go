@@ -9,8 +9,8 @@ import (
 	"feints/internal/player"
 )
 
-func QueueCommand(dp *player.DiscordPlayer, s *discordgo.Session, i *discordgo.InteractionCreate) {
-	queue := dp.Queue()
+func QueueCommand(dp player.Player, s *discordgo.Session, i *discordgo.InteractionCreate) {
+	queue := dp.QueueList()
 	if len(queue) == 0 {
 		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,

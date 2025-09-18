@@ -45,7 +45,7 @@ RUN go install github.com/air-verse/air@latest
 
 WORKDIR /app
 
-COPY --from=builder /app/tmp/main .
+# COPY --from=builder /app/tmp/main .
 COPY . .
 # Copy source files
 RUN go mod tidy

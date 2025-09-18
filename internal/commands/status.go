@@ -8,11 +8,11 @@ import (
 	"feints/internal/player"
 )
 
-func StatusCommand(dp *player.DiscordPlayer, s *discordgo.Session, i *discordgo.InteractionCreate) {
+func StatusCommand(dp player.Player, s *discordgo.Session, i *discordgo.InteractionCreate) {
 	status := dp.Status()
-	current := dp.Current()
+	current := dp.NowPlaying()
 	msg := fmt.Sprintf("Estado: **%s**", status)
-	if current != nil {
+	if current.Title != "" {
 		msg += fmt.Sprintf("\nReproduciendo: **%s**", current.Title)
 	}
 

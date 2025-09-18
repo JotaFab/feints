@@ -10,7 +10,7 @@ import (
 )
 
 // TestCommand fills the queue with real YouTube songs
-func TestCommand(dp *player.DiscordPlayer, s *discordgo.Session, i *discordgo.InteractionCreate) {
+func TestCommand(dp player.Player, s *discordgo.Session, i *discordgo.InteractionCreate) {
 	// Obtener el usuario que ejecuta el comando
 	userID := i.Member.User.ID
 	guildID := i.GuildID
@@ -44,12 +44,13 @@ func TestCommand(dp *player.DiscordPlayer, s *discordgo.Session, i *discordgo.In
 
 	for _, url := range testSongs {
 
-		dp.PlaySong(player.Song{
+		dp.AddToQueue(player.Song{
 			Title: url,
 			URL:   url,
 		})
 
 	}
+	dp.Play()
 
 	// Responder en Discord
 	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{

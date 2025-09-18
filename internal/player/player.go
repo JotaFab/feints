@@ -1,281 +1,235 @@
 package player
 
 import (
-	"context"
-	"encoding/binary"
-	"fmt"
-	"io"
-	"os/exec"
+	"log"
 	"sync"
 
 	"github.com/bwmarrin/discordgo"
-	"layeh.com/gopus"
 )
 
-// Song representa una canción
-type Song struct {
-	Title string
-	URL   string
+// --- Tipos y constantes ---
+type PlayerState string
+
+const (
+	Idle    PlayerState = "idle"
+	Playing PlayerState = "playing"
+	Paused  PlayerState = "paused"
+)
+
+// --- Player interface ---
+type Player interface {
+	AddToQueue(song Song)
+	Play()
+	Pause()
+	Stop()
+	NextSong()
+	NowPlaying() Song
+	QueueList() []Song
+	Clear()
+	Status() string
 }
 
-// DiscordPlayer administra la reproducción de música en un canal de voz
-type DiscordPlayer struct {
-	sync.Mutex
-	session   *discordgo.Session
-	guildID   string
-	channelID string
-	vc        *discordgo.VoiceConnection
-	queue     *SongQueue
-	encoder   *gopus.Encoder
-
-	ctx       context.Context
-	cancel    context.CancelFunc
-	pauseChan chan bool
-	playing   bool
-	current   *Song
-	status    string
+// --- Comandos para el canal de control ---
+type controlMsg struct {
+	Command string
 }
 
-// PlayerManager administra múltiples reproductores
-type PlayerManager struct {
-	Players map[string]*DiscordPlayer // clave = guildID+channelID
+// --- internal DiscordPlayer ---
+type discordPlayer struct {
+	sync.RWMutex
+
+	session    *discordgo.Session
+	guildID    string
+	channelID  string
+	vc         *discordgo.VoiceConnection
+
+	queue   *SongQueue
+	state   PlayerState
+	current *Song
+	logger  *log.Logger
+
+	control    chan controlMsg
+	stopStream chan struct{}
 }
 
-// NewPlayerManager crea un nuevo administrador
-func NewPlayerManager() *PlayerManager {
-	return &PlayerManager{
-		Players: make(map[string]*DiscordPlayer),
-	}
+// --- Implementación de la interfaz Player ---
+func (dp *discordPlayer) AddToQueue(song Song) {
+    dp.queue.Push(song)
 }
 
-// GetPlayer obtiene un reproductor existente o crea uno nuevo si no existe
-func (pm *PlayerManager) GetPlayer(s *discordgo.Session, guildID, channelID string) (*DiscordPlayer, error) {
-	key := guildID + channelID
-
-	// Verificar si ya existe
-	if dp, ok := pm.Players[key]; ok {
-		// Verificar si la conexión de voz sigue activa
-		if dp.vc != nil && dp.vc.Ready {
-			return dp, nil
-		}
-		// Si la VC no está activa, desconectar y eliminar para recrear
-		_ = dp.Disconnect()
-		delete(pm.Players, key)
-	}
-
-	// Intentar unirse al canal de voz
-	vc, err := s.ChannelVoiceJoin(guildID, channelID, false, true)
-	if err != nil {
-		return nil, fmt.Errorf("error al conectar al canal de voz: %w", err)
-	}
-
-	encoder, err := gopus.NewEncoder(48000, 2, gopus.Audio)
-	if err != nil {
-		return nil, fmt.Errorf("error creando encoder opus: %w", err)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	dp := &DiscordPlayer{
-		session:   s,
-		guildID:   guildID,
-		channelID: channelID,
-		vc:        vc,
-		queue:     NewSongQueue(),
-		encoder:   encoder,
-		ctx:       ctx,
-		cancel:    cancel,
-		pauseChan: make(chan bool, 1),
-		status:    "stopped",
-	}
-
-	pm.Players[key] = dp
-	return dp, nil
+func (dp *discordPlayer) Play() {
+    dp.control <- controlMsg{Command: "play"}
 }
 
-
-// Disconnect cierra la conexión de voz
-func (p *DiscordPlayer) Disconnect() error {
-	p.cancel()
-	if p.vc != nil {
-		return p.vc.Disconnect()
-	}
-	return nil
+func (dp *discordPlayer) Pause() {
+    dp.control <- controlMsg{Command: "pause"}
 }
 
-// PlaySong agrega una canción a la cola y lanza el loop si no está corriendo
-func (p *DiscordPlayer) PlaySong(song Song) error {
-	p.queue.Push(song)
-
-	p.Lock()
-	defer p.Unlock()
-	if !p.playing {
-		p.playing = true
-		p.status = "playing"
-		go p.loop()
-	}
-	return nil
+func (dp *discordPlayer) Stop() {
+    dp.control <- controlMsg{Command: "stop"}
 }
 
-// loop procesa la cola continuamente
-func (p *DiscordPlayer) loop() {
-	for {
-		select {
-		case <-p.ctx.Done():
+func (dp *discordPlayer) NextSong() {
+    dp.control <- controlMsg{Command: "skip"}
+}
+
+func (dp *discordPlayer) NowPlaying() Song {
+    dp.RLock()
+    defer dp.RUnlock()
+    if dp.current != nil {
+        return *dp.current
+    }
+    return Song{}
+}
+
+func (dp *discordPlayer) QueueList() []Song {
+    dp.RLock()
+    defer dp.RUnlock()
+    list := dp.queue.List()
+    return list
+}
+
+func (dp *discordPlayer) Status() string {
+    dp.RLock()
+    defer dp.RUnlock()
+    return string(dp.state)
+}
+
+func (dp *discordPlayer) startStream(song *Song) {
+	
+	
+	
+	dp.Lock()
+	dp.stopCurrentStream()
+	disconnectVoice(dp.vc)
+		var err error
+		dp.vc, err = connectVoice(dp.session, dp.guildID, dp.channelID)
+		if err != nil {
+			dp.logger.Println("Error connecting to voice:", err)
 			return
-		default:
 		}
+	dp.current = song
+	dp.state = Playing
+	dp.Unlock()
+	dp.logger.Println("se esta estremeando una nueva cancion?")
 
-		next := p.queue.Pop()
-		if next == nil {
-			break
-		}
-
-		p.Lock()
-		p.current = next
-		p.Unlock()
-
-		if err := p.streamUrlSong(next.URL); err != nil {
-			fmt.Println("Error streaming:", err)
-		}
+	// Configura el struct para pasar la información necesaria
+	cfg := &StreamConfig{
+		VC:          dp.vc,
+		OpusSender:  dp.vc.OpusSend,
+		CurrentSong: dp.current,
+		StopChan:    dp.stopStream,
+		ControlChan: dp.control,
+		State:       dp.state,
+		Logger:      dp.logger,
+		StateMu:     &dp.RWMutex,
 	}
 
-	p.Lock()
-	p.playing = false
-	p.current = nil
-	p.status = "stopped"
-	p.Unlock()
+	go StreamSongLoop(cfg)
 }
 
-// streamSong usa yt-dlp + ffmpeg y envía audio a Discord
-func (p *DiscordPlayer) streamUrlSong(query string) error {
-	audioURL , err := YtdlpBestAudioURL(query)
-	if err != nil { return err }
-
-	ffmpegCmd := exec.Command("ffmpeg",
-		"-i", audioURL,
-		"-f", "s16le",
-		"-ar", "48000",
-		"-ac", "2",
-		"pipe:1",
-	)
-	ffmpegOut, err := ffmpegCmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("ffmpeg stdout: %w", err)
+func (dp *discordPlayer) stopCurrentStream() {
+	select {
+	case dp.stopStream <- struct{}{}:
+	default:
 	}
-	if err := ffmpegCmd.Start(); err != nil {
-		return fmt.Errorf("ffmpeg start: %w", err)
+}
+
+// --- Constructor ---
+func NewDiscordPlayer(s *discordgo.Session, guildID, channelID string) Player {
+	
+
+	dp := &discordPlayer{
+		session:    s,
+		guildID:    guildID,
+		channelID:  channelID,
+		queue:      NewSongQueue(),
+		state:      Idle,
+		control:    make(chan controlMsg, 10),
+		stopStream: make(chan struct{}, 1),
+		logger:     log.New(log.Writer(), "["+guildID+"] ", log.LstdFlags),
+		current:    nil,
 	}
+	go dp.stateLoopRun()
+	return dp
+}
 
-	const frameSize = 960
-	pcmBuf := make([]byte, frameSize*2*2)
+// --- Loop de control (el actor principal) ---
+func (dp *discordPlayer) stateLoopRun() {
+	for msg := range dp.control {
+		dp.logger.Println(msg)
+		dp.handleControl(msg)
+	}
+}
 
-	_ = p.vc.Speaking(true)
-	defer p.vc.Speaking(false)
+func (dp *discordPlayer) handleControl(msg controlMsg) {
+	dp.Lock()
+	defer dp.Unlock()
 
-	for {
-		select {
-		case <-p.ctx.Done():
-			ffmpegCmd.Process.Kill()
-			return nil
-		default:
-		}
-
-		_, err := io.ReadFull(ffmpegOut, pcmBuf)
-		if err != nil {
-			break
-		}
-
-		// pause handling
-		select {
-		case paused := <-p.pauseChan:
-			if paused {
-				p.Lock()
-				p.status = "paused"
-				p.Unlock()
-				// esperar a reanudar
-				for {
-					paused = <-p.pauseChan
-					if !paused {
-						p.Lock()
-						p.status = "playing"
-						p.Unlock()
-						break
-					}
-				}
+	switch msg.Command {
+	case "play":
+		if dp.state == Idle {
+			dp.logger.Println("Starting playback...")
+			if next := dp.queue.Pop(); next != nil {
+				// Aquí se inicia la reproducción, el actor principal es el encargado
+				dp.current = next
+				dp.state = Playing
+				go dp.startStream(next)
 			}
+		}
+	case "pause":
+		if dp.state == Playing {
+			dp.state = Paused
+			dp.logger.Println("Paused.")
+		}
+	case "resume":
+		if dp.state == Paused {
+			dp.state = Playing
+			dp.logger.Println("Resumed.")
+		}
+	case "stop":
+		select {
+		case dp.stopStream <- struct{}{}:
 		default:
 		}
-
-		// encode
-		pcm16 := make([]int16, len(pcmBuf)/2)
-		for i := range pcm16 {
-			pcm16[i] = int16(binary.LittleEndian.Uint16(pcmBuf[i*2:]))
+		dp.Clear()
+		dp.logger.Println("Stopped.")
+	case "skip":
+		select {
+		case dp.stopStream <- struct{}{}:
+		default:
 		}
-		opusFrame, err := p.encoder.Encode(pcm16, frameSize, len(pcm16)*2)
-		if err != nil {
-			return err
+		if next := dp.queue.Pop(); next != nil {
+			dp.current = next
+			dp.state = Playing
+		} else {
+			dp.state = Idle
+			dp.current = nil
 		}
-
-		p.vc.OpusSend <- opusFrame
+		dp.logger.Println("Skipped.")
+	case "end_of_stream":
+		if next := dp.queue.Pop(); next != nil {
+			dp.current = next
+			dp.state = Playing
+			go dp.stopCurrentStream()
+		} else {
+			dp.state = Idle
+			dp.current = nil
+			select {
+			case dp.stopStream <- struct{}{}:
+			default:
+			}
+		}
 	}
-
-	return ffmpegCmd.Wait()
 }
 
-// Pause pausa
-func (p *DiscordPlayer) Pause() error {
-	select {
-	case p.pauseChan <- true:
-	default:
-	}
-	return nil
-}
+func (dp *discordPlayer) Clear() {
+    dp.Lock()
+    defer dp.Unlock()
+	go dp.stopCurrentStream()
 
-// Resume reanuda
-func (p *DiscordPlayer) Resume() error {
-	select {
-	case p.pauseChan <- false:
-	default:
-	}
-	return nil
-}
 
-// Skip salta la canción actual pero mantiene el loop
-func (p *DiscordPlayer) Skip() error {
-	p.cancel()                          // cancela canción actual
-	p.ctx, p.cancel = context.WithCancel(context.Background()) // crea nuevo contexto para el loop
-	return nil
-}
-
-// Current devuelve la canción actual
-func (p *DiscordPlayer) Current() *Song {
-	p.Lock()
-	defer p.Unlock()
-	return p.current
-}
-
-// Queue devuelve la cola
-func (p *DiscordPlayer) Queue() []Song {
-	return p.queue.List()
-}
-
-// Clear limpia la cola
-func (p *DiscordPlayer) Clear() error {
-	p.queue.Clear()
-	return nil
-}
-
-// IsPlaying retorna true si está activo
-func (p *DiscordPlayer) IsPlaying() bool {
-	p.Lock()
-	defer p.Unlock()
-	return p.playing
-}
-
-// Status retorna el estado actual
-func (p *DiscordPlayer) Status() string {
-	p.Lock()
-	defer p.Unlock()
-	return p.status
+    dp.queue.Clear() // Call the Clear method on the SongQueue
+    dp.current = nil // Reset the current song
+    dp.state = Idle  // Set the player state to idle
 }

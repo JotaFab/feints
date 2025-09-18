@@ -31,9 +31,22 @@ func NewBotServer(s *discordgo.Session) *BotServer {
 	}
 }
 
-// GetOrCreatePlayer obtiene o crea un reproductor para un guild+canal
-func (bs *BotServer) GetOrCreatePlayer(guildID, channelID string) (*player.DiscordPlayer, error) {
-	return bs.PlayerManager.GetPlayer(bs.session, guildID, channelID)
+func (bs *BotServer) GetOrCreatePlayer(guildID, channelID string) (player.Player, error) {
+	key := guildID + channelID
+
+	// Revisa si ya existe
+	if p, ok := bs.PlayerManager.Players[key]; ok {
+		return p, nil
+	}
+
+	// Crear un nuevo player
+	p := player.NewDiscordPlayer(bs.session, guildID, channelID)
+	if p == nil {
+		return nil, fmt.Errorf("failed to create player")
+	}
+
+	bs.PlayerManager.Players[key] = p
+	return p, nil
 }
 
 // HandleCommand despacha las interacciones a los comandos
@@ -71,6 +84,7 @@ func (bs *BotServer) HandleCommand(cmd string, s *discordgo.Session, i *discordg
 		return
 	}
 
+
 	// Enviar el player al comando
 	switch cmd {
 	case "play":
@@ -81,14 +95,16 @@ func (bs *BotServer) HandleCommand(cmd string, s *discordgo.Session, i *discordg
 		commands.StopCommand(dp, s, i)
 	case "queue":
 		commands.QueueCommand(dp, s, i)
-	case "skip":
+	case "skip" :
+		commands.SkipCommand(dp, s, i)
+	case "next":
 		commands.SkipCommand(dp, s, i)
 	case "clear":
-		// commands.ClearCommand(dp, s, i)
+		commands.ClearCommand(dp, s, i)
 	case "status":
 		commands.StatusCommand(dp, s, i)
 	case "test":
-		// commands.TestCommand(dp, s, i)
+		commands.TestCommand(dp, s, i)
 		//commands.TestMultiVoiceCommand(bs.PlayerManager, s,i)
 	}
 }
@@ -174,3 +190,5 @@ func Run() error {
 
 	return nil
 }
+
+
