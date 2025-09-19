@@ -6,10 +6,10 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"feints/internal/player"
+	"feints/internal/infra"
 )
 
-func QueueCommand(dp player.Player, s *discordgo.Session, i *discordgo.InteractionCreate) {
+func QueueCommand(dp *infra.DiscordPlayer, s *discordgo.Session, i *discordgo.InteractionCreate) {
 	queue := dp.QueueList()
 	if len(queue) == 0 {
 		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{

@@ -1,17 +1,13 @@
 package commands
 
 import (
-	"log"
-
 	"github.com/bwmarrin/discordgo"
 
-	"feints/internal/player"
+	"feints/internal/infra"
 )
 
-func StopCommand(dp player.Player, s *discordgo.Session, i *discordgo.InteractionCreate) {
+func StopCommand(dp *infra.DiscordPlayer, s *discordgo.Session, i *discordgo.InteractionCreate) {
 	dp.Stop()
-	log.Println("entering stop ??? ", dp.Status())
-
 
 	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -21,10 +17,8 @@ func StopCommand(dp player.Player, s *discordgo.Session, i *discordgo.Interactio
 	})
 }
 
-func ClearCommand(dp player.Player, s *discordgo.Session, i *discordgo.InteractionCreate) { 
-	dp.Clear()
-	log.Println("entering stop ??? ", dp.Status())
-
+func ClearCommand(dp *infra.DiscordPlayer, s *discordgo.Session, i *discordgo.InteractionCreate) {
+	dp.Stop()
 
 	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,

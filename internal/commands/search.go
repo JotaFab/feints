@@ -1,13 +1,12 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/bwmarrin/discordgo"
-	"feints/internal/player"
+
+	"feints/internal/core"
 )
 
 // SearchCommand maneja el autocompletado de /play search
@@ -20,7 +19,7 @@ func SearchCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 
 	// Llamamos a nuestro wrapper YtdlpSearch
-	results, err := player.YtdlpSearch(query, 10)
+	results, err := core.YtdlpSearch(query, 10)
 	if err != nil {
 		log.Println("[SearchCommand] Error ejecutando yt-dlp:", err)
 		return
@@ -28,40 +27,20 @@ func SearchCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	log.Println("[SearchCommand] yt-dlp ejecutado correctamente")
 
 	var choices []*discordgo.ApplicationCommandOptionChoice
-	for idx, line := range results {
+	for idx, video := range results {
 		if idx >= 25 {
 			break
 		}
 
-		var video struct {
-			Title      string  `json:"title"`
-			WebpageURL string  `json:"webpage_url"` // 👈 aquí usa el campo correcto
-			Duration   float64 `json:"duration"`
-			IsLive     bool    `json:"is_live"`
-		}
-
-		if err := json.Unmarshal([]byte(line), &video); err != nil {
-			log.Println("[SearchCommand] Error parseando línea JSON:", err)
-			continue
-		}
-
-		if video.IsLive || video.Duration > 900 {
-			log.Printf("[SearchCommand] Descartando video: '%s' (live o >15m)\n", video.Title)
-			continue
-		}
-
-		// Duración bonita
-		durationFormatted := formatDuration(video.Duration)
-
-		name := fmt.Sprintf("[%s] %s", durationFormatted, video.Title)
+		name := fmt.Sprintf("[%s] %s", video.Duration, video.Title)
 		if len(name) > 100 {
 			name = name[:100]
 		}
-		log.Printf("[SearchCommand] Añadiendo choice: %s -> %s\n", name, video.WebpageURL)
+		log.Printf("[SearchCommand] Añadiendo choice: %s -> %s\n", name, video.URL)
 
 		choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
 			Name:  name,
-			Value: video.WebpageURL, // 👈 esto es lo que luego usarás en YtdlpBestAudioURL
+			Value: video.URL, // 👈 esto es lo que luego usarás en YtdlpBestAudioURL
 		})
 	}
 
@@ -84,10 +63,3 @@ func SearchCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 }
 
 
-// formatDuration convierte segundos en un string con formato MM:SS
-func formatDuration(duration float64) string {
-	d := time.Duration(duration) * time.Second
-	m := int(d.Minutes())
-	s := int(d.Seconds()) % 60
-	return fmt.Sprintf("%02d:%02d", m, s)
-}

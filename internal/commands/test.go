@@ -6,11 +6,12 @@ import (
 	"github.com/bwmarrin/discordgo"
 	log "github.com/sirupsen/logrus"
 
-	"feints/internal/player"
+	"feints/internal/core"
+	"feints/internal/infra"
 )
 
 // TestCommand fills the queue with real YouTube songs
-func TestCommand(dp player.Player, s *discordgo.Session, i *discordgo.InteractionCreate) {
+func TestCommand(dp *infra.DiscordPlayer, s *discordgo.Session, i *discordgo.InteractionCreate) {
 	// Obtener el usuario que ejecuta el comando
 	userID := i.Member.User.ID
 	guildID := i.GuildID
@@ -44,13 +45,12 @@ func TestCommand(dp player.Player, s *discordgo.Session, i *discordgo.Interactio
 
 	for _, url := range testSongs {
 
-		dp.AddToQueue(player.Song{
+		dp.Add(core.Song{
 			Title: url,
 			URL:   url,
 		})
 
 	}
-	dp.Play()
 
 	// Responder en Discord
 	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{

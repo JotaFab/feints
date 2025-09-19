@@ -5,49 +5,44 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 
 	"github.com/bwmarrin/discordgo"
 
 	"feints/internal/commands"
-	"feints/internal/player"
+    "feints/internal/infra"
 
 	_ "github.com/davecgh/go-spew/spew"
 )
 
 // BotServer administra múltiples reproductores por guild
 type BotServer struct {
-	sync.Mutex
 	session       *discordgo.Session
-	PlayerManager *player.PlayerManager
+	log *log.Logger
 }
 
 // NewBotServer crea un nuevo servidor de bots
 func NewBotServer(s *discordgo.Session) *BotServer {
+logger := log.New(os.Stdout, "[BOT-server] ", log.LstdFlags)
+
 	return &BotServer{
 		session:       s,
-		PlayerManager: player.NewPlayerManager(),
+		log: logger,
 	}
 }
 
-func (bs *BotServer) GetOrCreatePlayer(guildID, channelID string) (player.Player, error) {
-	key := guildID + channelID
+func (bs *BotServer) GetOrCreatePlayer(guildID, channelID string) (*infra.DiscordPlayer, error) {
 
-	// Revisa si ya existe
-	if p, ok := bs.PlayerManager.Players[key]; ok {
-		return p, nil
+    // Infraestructura: decorador que lo conecta a Discord
+	dp, err := infra.NewDiscordPlayer(bs.session, guildID, channelID, bs.log)
+	if err != nil {
+		return nil, err
 	}
 
-	// Crear un nuevo player
-	p := player.NewDiscordPlayer(bs.session, guildID, channelID)
-	if p == nil {
-		return nil, fmt.Errorf("failed to create player")
-	}
 
-	bs.PlayerManager.Players[key] = p
-	return p, nil
+    return dp, nil
 }
+
 
 // HandleCommand despacha las interacciones a los comandos
 func (bs *BotServer) HandleCommand(cmd string, s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -83,7 +78,7 @@ func (bs *BotServer) HandleCommand(cmd string, s *discordgo.Session, i *discordg
 		log.Println("Error obteniendo player:", err)
 		return
 	}
-
+	bs.log.Println(cmd)
 
 	// Enviar el player al comando
 	switch cmd {
