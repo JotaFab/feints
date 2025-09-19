@@ -3,10 +3,10 @@ package commands
 import (
 	"github.com/bwmarrin/discordgo"
 
-	"feints/internal/infra"
+	"feints/internal/core"
 )
 
-func SkipCommand(dp *infra.DiscordPlayer, s *discordgo.Session, i *discordgo.InteractionCreate) {
+func SkipCommand(dp core.Player, s *discordgo.Session, i *discordgo.InteractionCreate) {
 	dp.Next()
 	
 

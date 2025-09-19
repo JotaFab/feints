@@ -6,11 +6,10 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"feints/internal/core"
-	"feints/internal/infra"
 )
 
 // TestCommand fills the queue with real YouTube songs
-func TestCommand(dp *infra.DiscordPlayer, s *discordgo.Session, i *discordgo.InteractionCreate) {
+func TestCommand(dp core.Player, s *discordgo.Session, i *discordgo.InteractionCreate) {
 	// Obtener el usuario que ejecuta el comando
 	userID := i.Member.User.ID
 	guildID := i.GuildID
@@ -19,7 +18,6 @@ func TestCommand(dp *infra.DiscordPlayer, s *discordgo.Session, i *discordgo.Int
 	var voiceChannelID string
 	guild, err := s.State.Guild(guildID)
 	if err != nil {
-		dp.Log.Error("Error obteniendo guild","error", err)
 		return
 	}
 	for _, vs := range guild.VoiceStates {
@@ -29,7 +27,6 @@ func TestCommand(dp *infra.DiscordPlayer, s *discordgo.Session, i *discordgo.Int
 		}
 	}
 	if voiceChannelID == "" {
-		dp.Log.Error("Usuario no está en ningún canal de voz")
 		return
 	}
 
@@ -44,12 +41,13 @@ func TestCommand(dp *infra.DiscordPlayer, s *discordgo.Session, i *discordgo.Int
 
 	for _, url := range testSongs {
 
-		dp.Add(core.Song{
+		dp.AddSong(core.Song{
 			Title: url,
 			URL:   url,
 		})
 
 	}
+	dp.Play()
 
 	// Responder en Discord
 	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{

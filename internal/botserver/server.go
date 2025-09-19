@@ -8,6 +8,8 @@ import (
 
 	"feints/internal/commands"
 	"feints/internal/infra"
+	"feints/internal/core"
+
 	"github.com/bwmarrin/discordgo"
 	"log/slog"
 )
@@ -27,12 +29,9 @@ func NewBotServer(s *discordgo.Session, logger *slog.Logger) *BotServer {
 	}
 }
 
-func (bs *BotServer) GetOrCreatePlayer(guildID, channelID string) (*infra.DiscordPlayer, error) {
-	dp, err := infra.NewDiscordPlayer(bs.session, guildID, channelID, bs.Log)
-	if err != nil {
-		bs.Log.Error("Error creando player", "guildID", guildID, "channelID", channelID, "err", err)
-		return nil, err
-	}
+func (bs *BotServer) GetOrCreatePlayer(guildID, channelID string) (core.Player, error) {
+	dp := infra.NewDgvoicePlayer(bs.session, guildID, channelID, bs.Log)
+	
 	bs.Log.Info("Player creado", "guildID", guildID, "channelID", channelID)
 	return dp, nil
 }
@@ -101,7 +100,7 @@ func Run() error {
 		return fmt.Errorf("DISCORD_BOT_TOKEN no está definido")
 	}
 
-	dg, err := discordgo.New("Bearer " + token)
+	dg, err := discordgo.New("Bot " + token)
 	if err != nil {
 		return fmt.Errorf("error creando sesión de Discord: %v", err)
 	}

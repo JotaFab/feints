@@ -1,82 +1,159 @@
 package infra
 
 import (
-	"log/slog"
-	"time"
-
-	"github.com/bwmarrin/discordgo"
-
 	"feints/internal/core"
+	"github.com/bwmarrin/dgvoice"
+	"github.com/bwmarrin/discordgo"
+	"log/slog"
 )
 
-// DiscordPlayer une FeintsPlayer con Discord Voice
-type DiscordPlayer struct {
-	session   *discordgo.Session
-	guildID   string
-	channelID string
+// --- PlayerState ---
+type PlayerState string
+
+const (
+	Idle    PlayerState = "idle"
+	Playing PlayerState = "playing"
+	Paused  PlayerState = "paused"
+	Stopped PlayerState = "stopped"
+)
+
+type DgvoicePlayer struct {
+	Session   *discordgo.Session `json:"-"`
+	GuildID   string             `json:"guild_id"`
+	ChannelID string             `json:"channel_id"`
+	Queue     chan core.Song     `json:"-"`
+	Control   chan controlCmd    `json:"-"`
+	state     PlayerState
+	Logger    *slog.Logger `json:"-"`
 	vc        *discordgo.VoiceConnection
-	player    *core.FeintsPlayer
-	Log    *slog.Logger
+	stopCh    chan bool
 }
 
-// NewDiscordPlayer inicializa un reproductor con Discord
-func NewDiscordPlayer(s *discordgo.Session, guildID, channelID string, logger *slog.Logger) (*DiscordPlayer, error) {
-	vc, err := s.ChannelVoiceJoin(guildID, channelID, false, true)
-	if err != nil {
-		return nil, err
+type controlCmd string
+
+const (
+	cmdPlay   controlCmd = "play"
+	cmdPause  controlCmd = "pause"
+	cmdResume controlCmd = "resume"
+	cmdNext   controlCmd = "next"
+	cmdStop   controlCmd = "stop"
+)
+
+// NewDgvoicePlayer devuelve un Player
+func NewDgvoicePlayer(session *discordgo.Session, guildID, channelID string, l *slog.Logger) core.Player {
+	p := &DgvoicePlayer{
+		Session:   session,
+		GuildID:   guildID,
+		ChannelID: channelID,
+		Queue:     make(chan core.Song, 50),
+		Control:   make(chan controlCmd),
+		state:     Idle,
+		Logger:    l.With("component", "Player", "guild", guildID),
+		stopCh:    make(chan bool, 1),
 	}
-
-	dp := &DiscordPlayer{
-		session:   s,
-		guildID:   guildID,
-		channelID: channelID,
-		vc:        vc,
-		player:    core.NewFeintsPlayer(logger),
-		Log:    logger,
-	}
-
-	// loop que envía OutputCh → OpusSend
-	go dp.streamLoop()
-
-	return dp, nil
+	go p.loop()
+	return p
 }
 
-// streamLoop escucha el canal de salida del player y manda frames a Discord
-func (dp *DiscordPlayer) streamLoop() {
-	for frame :=range(dp.player.OutputCh){
+// --- Interface methods ---
+func (p *DgvoicePlayer) Play() {
+	p.Logger.Info("Play() called")
+	p.Control <- cmdPlay
+}
 
+func (p *DgvoicePlayer) AddSong(song core.Song) {
+	p.Logger.Info("Queueing song", "title", song.Title)
+	p.Queue <- song
+}
 
-			if dp.vc == nil || dp.vc.OpusSend == nil {
-				continue // ignorar mientras no hay conexión
-			}
+func (p *DgvoicePlayer) Next()   { p.Control <- cmdNext }
+func (p *DgvoicePlayer) Pause()  { p.Control <- cmdPause }
+func (p *DgvoicePlayer) Resume() { p.Control <- cmdResume }
+func (p *DgvoicePlayer) Stop()   { p.Control <- cmdStop }
 
-			dp.vc.OpusSend <- frame // enviar frame
-			// enviado correctamente
-			time.Sleep(20 * time.Millisecond)
+func (p *DgvoicePlayer) ListQueue() []core.Song {
+	snapshot := []core.Song{}
+	for {
+		select {
+		case s := <-p.Queue:
+			snapshot = append(snapshot, s)
+		default:
+			return snapshot
 		}
 	}
+}
 
-// Métodos de control (puentes hacia CmdCh)
-func (dp *DiscordPlayer) Add(song core.Song) {
-	dp.player.CmdCh <- core.PlayerCommand{Name: "add", Arg: song}
+func (p *DgvoicePlayer) State() string { return string(p.state) }
+
+// --- loop privado ---
+func (p *DgvoicePlayer) loop() {
+	for cmd := range p.Control {
+		switch cmd {
+		case cmdPlay:
+			song := <-p.Queue
+			go p.playSong(song)
+		case cmdPause:
+			p.pause()
+		case cmdResume:
+			p.resume()
+		case cmdNext:
+			p.Logger.Info("Skipping song")
+			if p.vc != nil {
+				p.vc.Speaking(false)
+			}
+			p.stopCh <- true
+
+		case cmdStop:
+			p.Logger.Info("Stopping and clearing queue")
+			if p.vc != nil {
+				p.vc.Disconnect()
+			}
+			p.stopCh <- true
+			close(p.Queue)
+			return
+		}
+	}
 }
-func (dp *DiscordPlayer) Play() {
-	dp.player.CmdCh <- core.PlayerCommand{Name: "play"}
+
+func (p *DgvoicePlayer) playSong(song core.Song) {
+
+	s, err := YtdlpBestAudioURL(song.URL)
+	if err != nil {
+		p.Logger.Error("error downloading the song", "error", err)
+		return
+	}
+
+	p.state = Playing
+	p.Logger.Info("Playing song", "title", s.Title)
+	if p.vc == nil {
+		vc, err := p.Session.ChannelVoiceJoin(p.GuildID, p.ChannelID, false, true)
+		if err != nil {
+			p.Logger.Error("Join failed", "error", err)
+			return
+		}
+		p.vc = vc
+	}
+	dgvoice.PlayAudioFile(p.vc, s.Path, p.stopCh)
+	p.Logger.Info("Finished", "title", s.Title)
+	p.state = Idle
 }
-func (dp *DiscordPlayer) Pause() {
-	dp.player.CmdCh <- core.PlayerCommand{Name: "pause"}
+
+func (p *DgvoicePlayer) pause() {
+	if p.state == Playing {
+		p.state = Paused
+		p.Logger.Info("Paused")
+		if p.vc != nil {
+			p.vc.Speaking(false)
+		}
+	}
 }
-func (dp *DiscordPlayer) Resume() {
-	dp.player.CmdCh <- core.PlayerCommand{Name: "resume"}
-}
-func (dp *DiscordPlayer) Next() {
-	dp.player.CmdCh <- core.PlayerCommand{Name: "next"}
-}
-func (dp *DiscordPlayer) Stop() {
-	dp.player.CmdCh <- core.PlayerCommand{Name: "stop"}
-}
-func (dp *DiscordPlayer) QueueList() []core.Song {
-	resp := make(chan any)
-	dp.player.CmdCh <- core.PlayerCommand{Name: "list", Resp: resp}
-	return (<-resp).([]core.Song)
+
+func (p *DgvoicePlayer) resume() {
+	if p.state == Paused {
+		p.state = Playing
+		p.Logger.Info("Resumed")
+		if p.vc != nil {
+			p.vc.Speaking(true)
+		}
+	}
 }

@@ -3,10 +3,10 @@ package commands
 import (
 	"github.com/bwmarrin/discordgo"
 
-	"feints/internal/infra"
+	"feints/internal/core"
 )
 
-func StopCommand(dp *infra.DiscordPlayer, s *discordgo.Session, i *discordgo.InteractionCreate) {
+func StopCommand(dp core.Player, s *discordgo.Session, i *discordgo.InteractionCreate) {
 	dp.Stop()
 
 	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
@@ -17,7 +17,7 @@ func StopCommand(dp *infra.DiscordPlayer, s *discordgo.Session, i *discordgo.Int
 	})
 }
 
-func ClearCommand(dp *infra.DiscordPlayer, s *discordgo.Session, i *discordgo.InteractionCreate) {
+func ClearCommand(dp core.Player, s *discordgo.Session, i *discordgo.InteractionCreate) {
 	dp.Stop()
 
 	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{

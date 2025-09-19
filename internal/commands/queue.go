@@ -6,11 +6,11 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"feints/internal/infra"
+	"feints/internal/core"
 )
 
-func QueueCommand(dp *infra.DiscordPlayer, s *discordgo.Session, i *discordgo.InteractionCreate) {
-	queue := dp.QueueList()
+func QueueCommand(dp core.Player, s *discordgo.Session, i *discordgo.InteractionCreate) {
+	queue := dp.ListQueue()
 	if len(queue) == 0 {
 		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,

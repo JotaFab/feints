@@ -7,11 +7,10 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"feints/internal/core"
-	"feints/internal/infra"
 )
 
 // PlayCommand reproduce o añade una canción a la cola
-func PlayCommand(dp *infra.DiscordPlayer, s *discordgo.Session, i *discordgo.InteractionCreate) {
+func PlayCommand(dp core.Player, s *discordgo.Session, i *discordgo.InteractionCreate) {
 	// Obtener argumento (canción / búsqueda)
 	options := i.ApplicationCommandData().Options
 	if len(options) == 0 {
@@ -36,10 +35,11 @@ func PlayCommand(dp *infra.DiscordPlayer, s *discordgo.Session, i *discordgo.Int
 	}
 
 	// Añadir canción a la cola
-	dp.Add(core.Song{
+	dp.AddSong(core.Song{
 		Title: query, // se puede enriquecer con metadatos de yt-dlp si quieres
 		URL:   query,
 	})
+	dp.Play()
 	
 	
 

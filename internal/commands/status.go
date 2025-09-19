@@ -3,10 +3,10 @@ package commands
 import (
 	"github.com/bwmarrin/discordgo"
 
-	"feints/internal/infra"
+	"feints/internal/core"
 )
 
-func StatusCommand(dp *infra.DiscordPlayer, s *discordgo.Session, i *discordgo.InteractionCreate) {
+func StatusCommand(dp core.Player, s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
