@@ -1,7 +1,7 @@
 package infra
 
 import (
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -16,11 +16,11 @@ type DiscordPlayer struct {
 	channelID string
 	vc        *discordgo.VoiceConnection
 	player    *core.FeintsPlayer
-	logger    *log.Logger
+	Log    *slog.Logger
 }
 
 // NewDiscordPlayer inicializa un reproductor con Discord
-func NewDiscordPlayer(s *discordgo.Session, guildID, channelID string, logger *log.Logger) (*DiscordPlayer, error) {
+func NewDiscordPlayer(s *discordgo.Session, guildID, channelID string, logger *slog.Logger) (*DiscordPlayer, error) {
 	vc, err := s.ChannelVoiceJoin(guildID, channelID, false, true)
 	if err != nil {
 		return nil, err
@@ -32,7 +32,7 @@ func NewDiscordPlayer(s *discordgo.Session, guildID, channelID string, logger *l
 		channelID: channelID,
 		vc:        vc,
 		player:    core.NewFeintsPlayer(logger),
-		logger:    logger,
+		Log:    logger,
 	}
 
 	// loop que envía OutputCh → OpusSend
@@ -43,12 +43,10 @@ func NewDiscordPlayer(s *discordgo.Session, guildID, channelID string, logger *l
 
 // streamLoop escucha el canal de salida del player y manda frames a Discord
 func (dp *DiscordPlayer) streamLoop() {
-	for {
-		select {
-		case frame, ok := <-dp.player.OutputCh:
+	for frame :=range(dp.player.OutputCh){
 
 
-			if !ok || dp.vc == nil || dp.vc.OpusSend == nil {
+			if dp.vc == nil || dp.vc.OpusSend == nil {
 				continue // ignorar mientras no hay conexión
 			}
 
@@ -57,7 +55,6 @@ func (dp *DiscordPlayer) streamLoop() {
 			time.Sleep(20 * time.Millisecond)
 		}
 	}
-}
 
 // Métodos de control (puentes hacia CmdCh)
 func (dp *DiscordPlayer) Add(song core.Song) {

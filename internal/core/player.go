@@ -1,7 +1,7 @@
 package core
 
 import (
-	"log"
+	"log/slog"
 	"os/exec"
 )
 
@@ -28,13 +28,13 @@ type FeintsPlayer struct {
 	OutputCh  chan []byte
 	state     PlayerState
 	current   *Song
-	logger    *log.Logger
+	logger    *slog.Logger
 	cancelCmd *exec.Cmd
 	skipCh    chan struct{}
 }
 
 // NewFeintsPlayer crea un reproductor nuevo
-func NewFeintsPlayer(logger *log.Logger) *FeintsPlayer {
+func NewFeintsPlayer(logger *slog.Logger) *FeintsPlayer {
 	p := &FeintsPlayer{
 		Queue:    NewSongQueue(),
 		CmdCh:    make(chan PlayerCommand),
@@ -55,11 +55,11 @@ func (p *FeintsPlayer) loop() {
 			song := cmd.Arg.(Song)
 			s, err := YtdlpBestAudioURL(song.URL)
 			if err != nil {
-				p.logger.Println(err)
+				p.logger.Error(string(p.state),"error downloading or getting the path maybe",err)
 				continue
 			}
 			p.Queue.Push(*s)
-			p.logger.Printf("Song added: %s", s.Title)
+			p.logger.Info("Song added","title", s.Title)
 
 			// si está idle, comenzar a reproducir
 			if p.state == StateIdle {
@@ -73,13 +73,13 @@ func (p *FeintsPlayer) loop() {
 		case "pause":
 			if p.state == StatePlaying {
 				p.state = StatePaused
-				p.logger.Println("Paused playback")
+				p.logger.Info("Paused playback")
 			}
 
 		case "resume":
 			if p.state == StatePaused {
 				p.state = StatePlaying
-				p.logger.Println("Resumed playback")
+				p.logger.Info("Resumed playback")
 			}
 
 		case "next", "skip":
@@ -99,10 +99,10 @@ func (p *FeintsPlayer) loop() {
 			p.state = StateIdle
 			p.current = nil
 			p.Queue.Clear()
-			p.logger.Println("Stopped and cleared queue")
+			p.logger.Info("Stopped and cleared queue")
 
 		case "list":
-			p.logger.Println(p.Queue.List())
+			p.logger.Debug("listing?????","Current Queue...",p.Queue.List())
 			cmd.Resp <- p.Queue.List()
 		}
 	}
@@ -110,12 +110,12 @@ func (p *FeintsPlayer) loop() {
 
 
 func (p *FeintsPlayer) streamSong(song *Song) {
-	p.logger.Printf("Now streaming: %s", song.Title)
+	p.logger.Info("Now streaming","title", song.Title)
 
 	opusCh := make(chan []byte, 10)
 	cmd, err := StreamFromPathToOpusChan(song.Path, opusCh)
 	if err != nil {
-		p.logger.Printf("Error starting stream: %v", err)
+		p.logger.Error("Error starting stream",string(p.state), err)
 		return
 	}
 	p.cancelCmd = cmd
@@ -129,7 +129,7 @@ func (p *FeintsPlayer) streamSong(song *Song) {
 			}
 			p.OutputCh <- frame
 		case <-p.skipCh:
-			p.logger.Printf("Skipped: %s", song.Title)
+			p.logger.Info("Skipping...","Song title:", song.Title)
 			p.cancelCmd.Process.Kill()
 			p.cancelCmd = nil
 			return

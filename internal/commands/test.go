@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/bwmarrin/discordgo"
-	log "github.com/sirupsen/logrus"
 
 	"feints/internal/core"
 	"feints/internal/infra"
@@ -20,7 +19,7 @@ func TestCommand(dp *infra.DiscordPlayer, s *discordgo.Session, i *discordgo.Int
 	var voiceChannelID string
 	guild, err := s.State.Guild(guildID)
 	if err != nil {
-		log.Errorf("Error obteniendo guild: %v", err)
+		dp.Log.Error("Error obteniendo guild","error", err)
 		return
 	}
 	for _, vs := range guild.VoiceStates {
@@ -30,7 +29,7 @@ func TestCommand(dp *infra.DiscordPlayer, s *discordgo.Session, i *discordgo.Int
 		}
 	}
 	if voiceChannelID == "" {
-		log.Error("Usuario no está en ningún canal de voz")
+		dp.Log.Error("Usuario no está en ningún canal de voz")
 		return
 	}
 

@@ -2,47 +2,40 @@ package botserver
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/bwmarrin/discordgo"
-
 	"feints/internal/commands"
-    "feints/internal/infra"
-
-	_ "github.com/davecgh/go-spew/spew"
+	"feints/internal/infra"
+	"github.com/bwmarrin/discordgo"
+	"log/slog"
 )
 
 // BotServer administra múltiples reproductores por guild
 type BotServer struct {
-	session       *discordgo.Session
-	log *log.Logger
+	session *discordgo.Session
+	Log     *slog.Logger
 }
 
-// NewBotServer crea un nuevo servidor de bots
-func NewBotServer(s *discordgo.Session) *BotServer {
-logger := log.New(os.Stdout, "[BOT-server] ", log.LstdFlags)
+// NewBotServer crea un nuevo servidor de bots con logger JSON
+func NewBotServer(s *discordgo.Session, logger *slog.Logger) *BotServer {
 
 	return &BotServer{
-		session:       s,
-		log: logger,
+		session: s,
+		Log:     logger,
 	}
 }
 
 func (bs *BotServer) GetOrCreatePlayer(guildID, channelID string) (*infra.DiscordPlayer, error) {
-
-    // Infraestructura: decorador que lo conecta a Discord
-	dp, err := infra.NewDiscordPlayer(bs.session, guildID, channelID, bs.log)
+	dp, err := infra.NewDiscordPlayer(bs.session, guildID, channelID, bs.Log)
 	if err != nil {
+		bs.Log.Error("Error creando player", "guildID", guildID, "channelID", channelID, "err", err)
 		return nil, err
 	}
-
-
-    return dp, nil
+	bs.Log.Info("Player creado", "guildID", guildID, "channelID", channelID)
+	return dp, nil
 }
-
 
 // HandleCommand despacha las interacciones a los comandos
 func (bs *BotServer) HandleCommand(cmd string, s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -53,7 +46,7 @@ func (bs *BotServer) HandleCommand(cmd string, s *discordgo.Session, i *discordg
 	var voiceChannelID string
 	guild, err := s.State.Guild(guildID)
 	if err != nil {
-		log.Println("No se pudo obtener guild:", err)
+		bs.Log.Error("No se pudo obtener guild", "err", err, "guildID", guildID)
 		return
 	}
 	for _, vs := range guild.VoiceStates {
@@ -72,27 +65,25 @@ func (bs *BotServer) HandleCommand(cmd string, s *discordgo.Session, i *discordg
 		return
 	}
 
-	// Obtener el player correspondiente
+	// Obtener el player
 	dp, err := bs.GetOrCreatePlayer(guildID, voiceChannelID)
 	if err != nil {
-		log.Println("Error obteniendo player:", err)
+		bs.Log.Error("Error obteniendo player", "err", err)
 		return
 	}
-	bs.log.Println(cmd)
 
-	// Enviar el player al comando
+	bs.Log.Info("Ejecutando comando", "cmd", cmd, "userID", userID, "guildID", guildID)
+
 	switch cmd {
 	case "play":
-		commands.PlayCommand(dp, s, i) // ahora PlayCommand recibe solo su player
+		commands.PlayCommand(dp, s, i)
 	case "pause":
 		// commands.PauseCommand(dp, s, i)
 	case "stop":
 		commands.StopCommand(dp, s, i)
 	case "queue":
 		commands.QueueCommand(dp, s, i)
-	case "skip" :
-		commands.SkipCommand(dp, s, i)
-	case "next":
+	case "skip", "next":
 		commands.SkipCommand(dp, s, i)
 	case "clear":
 		commands.ClearCommand(dp, s, i)
@@ -100,7 +91,6 @@ func (bs *BotServer) HandleCommand(cmd string, s *discordgo.Session, i *discordg
 		commands.StatusCommand(dp, s, i)
 	case "test":
 		commands.TestCommand(dp, s, i)
-		//commands.TestMultiVoiceCommand(bs.PlayerManager, s,i)
 	}
 }
 
@@ -111,16 +101,16 @@ func Run() error {
 		return fmt.Errorf("DISCORD_BOT_TOKEN no está definido")
 	}
 
-	dg, err := discordgo.New("Bot " + token)
+	dg, err := discordgo.New("Bearer " + token)
 	if err != nil {
 		return fmt.Errorf("error creando sesión de Discord: %v", err)
 	}
+	handler := slog.NewJSONHandler(os.Stdout, nil)
+	log := slog.New(handler)
 
-	bs := NewBotServer(dg)
-
-	// Al estar listo el bot
+	// Handler de Ready
 	dg.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
-		fmt.Println("✅ Bot conectado como", s.State.User.Username)
+		log.Info("Bot conectado", "username", s.State.User.Username)
 
 		commandsToRegister := []*discordgo.ApplicationCommand{
 			{
@@ -128,10 +118,10 @@ func Run() error {
 				Description: "Reproduce una canción",
 				Options: []*discordgo.ApplicationCommandOption{
 					{
-						Type:        discordgo.ApplicationCommandOptionString,
-						Name:        "search",
-						Description: "Nombre o URL de la canción",
-						Required:    true,
+						Type:         discordgo.ApplicationCommandOptionString,
+						Name:         "search",
+						Description:  "Nombre o URL de la canción",
+						Required:     true,
 						Autocomplete: true,
 					},
 				},
@@ -147,44 +137,40 @@ func Run() error {
 		for _, cmd := range commandsToRegister {
 			_, err := s.ApplicationCommandCreate(s.State.User.ID, "", cmd)
 			if err != nil {
-				fmt.Printf("❌ Error registrando comando %s: %v\n", cmd.Name, err)
+				log.Error("Error registrando comando", "name", cmd.Name, "err", err)
 			} else {
-				fmt.Printf("✅ Comando /%s registrado\n", cmd.Name)
+				log.Info("Comando registrado", "name", cmd.Name)
 			}
 		}
 	})
 
-	// Handler para autocompletado
+	// Autocompletado
 	dg.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		if i.Type == discordgo.InteractionApplicationCommandAutocomplete {
-			log.Printf("how many times i was here?? %s", i.Locale.String())
 			switch i.ApplicationCommandData().Name {
 			case "play":
-				commands.SearchCommand(s, i) // llama la función de autocompletado
+				commands.SearchCommand(s, i)
 			}
 		}
 	})
-
-	// Registrar handler de comandos
+	if err := dg.Open(); err != nil {
+		return err
+	}
+	bs := NewBotServer(dg, log)
+	// Comandos
 	dg.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-
 		if i.Type == discordgo.InteractionApplicationCommand {
 			bs.HandleCommand(i.ApplicationCommandData().Name, s, i)
 		}
 	})
 
-	if err := dg.Open(); err != nil {
-		return fmt.Errorf("error abriendo conexión de Discord: %v", err)
-	}
-	go StartJanitor(dg)
+	StartJanitor(dg)
 	defer dg.Close()
 
-	fmt.Println("🤖 Bot is running. Press CTRL+C to exit.")
+	bs.Log.Info("Bot ejecutándose. Presiona CTRL+C para salir.")
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
 
 	return nil
 }
-
-
