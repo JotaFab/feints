@@ -3,7 +3,6 @@ package core
 import (
 	"log"
 	"os/exec"
-	"time"
 )
 
 // PlayerState define el estado actual del reproductor
@@ -45,7 +44,6 @@ func NewFeintsPlayer(logger *log.Logger) *FeintsPlayer {
 		skipCh:   make(chan struct{}, 1),
 	}
 	go p.loop()
-	go p.worker()
 	return p
 }
 
@@ -104,37 +102,21 @@ func (p *FeintsPlayer) loop() {
 			p.logger.Println("Stopped and cleared queue")
 
 		case "list":
+			p.logger.Println(p.Queue.List())
 			cmd.Resp <- p.Queue.List()
 		}
 	}
 }
-func (p *FeintsPlayer) worker() {
-	for {
-		if p.state == StatePaused || len(p.Queue.List()) == 0 {
-			time.Sleep(200 * time.Millisecond)
-			continue
-		}
 
-		if p.current == nil {
-			p.current = p.Queue.Pop()
-		}
 
-		if p.current != nil {
-			p.state = StatePlaying
-			go p.streamSong(p.current) // ahora devuelve la canción terminada
-			p.current = nil
-		}
-	}
-}
-
-func (p *FeintsPlayer) streamSong(song *Song) *Song {
+func (p *FeintsPlayer) streamSong(song *Song) {
 	p.logger.Printf("Now streaming: %s", song.Title)
 
 	opusCh := make(chan []byte, 10)
 	cmd, err := StreamFromPathToOpusChan(song.Path, opusCh)
 	if err != nil {
 		p.logger.Printf("Error starting stream: %v", err)
-		return song
+		return
 	}
 	p.cancelCmd = cmd
 
@@ -143,13 +125,14 @@ func (p *FeintsPlayer) streamSong(song *Song) *Song {
 		case frame, ok := <-opusCh:
 			if !ok || p.state != StatePlaying {
 				p.cancelCmd = nil
-				return song
+				return
 			}
 			p.OutputCh <- frame
 		case <-p.skipCh:
 			p.logger.Printf("Skipped: %s", song.Title)
+			p.cancelCmd.Process.Kill()
 			p.cancelCmd = nil
-			return song
+			return
 		}
 	}
 	

@@ -54,8 +54,8 @@ func (dp *DiscordPlayer) streamLoop() {
 
 			dp.vc.OpusSend <- frame // enviar frame
 			// enviado correctamente
+			time.Sleep(20 * time.Millisecond)
 		}
-		time.Sleep(20 * time.Millisecond)
 	}
 }
 

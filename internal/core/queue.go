@@ -1,5 +1,7 @@
 package core
 
+import "log"
+
 // SongQueue es una cola FIFO controlada por un goroutine
 type SongQueue struct {
     addCh   chan Song
@@ -48,10 +50,6 @@ func (q *SongQueue) loop() {
     }
 }
 
-// Push añade una canción al final de la cola
-func (q *SongQueue) Push(song Song) {
-    q.addCh <- song
-}
 
 // Pop obtiene y elimina la siguiente canción en FIFO
 func (q *SongQueue) Pop() *Song {
@@ -60,14 +58,20 @@ func (q *SongQueue) Pop() *Song {
     return <-reply
 }
 
-// List devuelve una copia de las canciones en la cola
+func (q *SongQueue) Push(song Song) {
+    log.Printf("Push: %s", song.Title)
+    q.addCh <- song
+}
+
+func (q *SongQueue) Clear() {
+    log.Println("Queue cleared")
+    q.clearCh <- struct{}{}
+}
+
 func (q *SongQueue) List() []Song {
     reply := make(chan []Song)
     q.listCh <- reply
-    return <-reply
-}
-
-// Clear vacía la cola
-func (q *SongQueue) Clear() {
-    q.clearCh <- struct{}{}
+    songs := <-reply
+    log.Printf("List returned %d songs", len(songs))
+    return songs
 }

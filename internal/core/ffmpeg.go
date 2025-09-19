@@ -3,7 +3,6 @@ package core
 import (
 	"encoding/binary"
 	"io"
-	"log"
 	"os/exec"
 
 	"layeh.com/gopus"
@@ -58,7 +57,6 @@ func StreamFromPathToOpusChan(input string, opusChan chan []byte) (*exec.Cmd, er
 			if err != nil {
 				continue
 			}
-			log.Println("frame enviado")
 			// Enviar frame
 			opusChan <- opus
 		}

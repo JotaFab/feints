@@ -176,6 +176,7 @@ func Run() error {
 	if err := dg.Open(); err != nil {
 		return fmt.Errorf("error abriendo conexión de Discord: %v", err)
 	}
+	go StartJanitor(dg)
 	defer dg.Close()
 
 	fmt.Println("🤖 Bot is running. Press CTRL+C to exit.")
