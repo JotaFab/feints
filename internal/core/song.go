@@ -1,6 +1,9 @@
 package core
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // Song representa una canción genérica dentro del dominio.
 type Song struct {
@@ -10,4 +13,12 @@ type Song struct {
 	Thumbnail string        `json:"thumbnail"`
 	URL       string        `json:"url"`
 	Path      string        `json:"path"`
+}
+
+// String devuelve una representación legible de la canción.
+func (s Song) String() string {
+	return fmt.Sprintf(
+		"Song{Title=%q, Uploader=%q, Duration=%s, URL=%s, Path=%s}",
+		s.Title, s.Uploader, s.Duration.String(), s.URL, s.Path,
+	)
 }

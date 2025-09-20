@@ -32,7 +32,7 @@ func TestCommand(dp core.Player, s *discordgo.Session, i *discordgo.InteractionC
 
 	// Lista de canciones de prueba
 	testSongs := []string{
-		"https://www.youtube.com/watch?v=6JCLY0Rlx6Q", // Milky Chance - Colorado
+		"https://www.youtube.com/watch?v=6JCLY0Rlx6Q", // WALK THE MOON - Shut Up and Dance (Official Video)
 		"https://www.youtube.com/watch?v=7wtfhZwyrcc", // Imagine Dragons - Believer
 		"https://www.youtube.com/watch?v=fJ9rUzIMcZQ", // Queen - Bohemian Rhapsody
 		"https://www.youtube.com/watch?v=kXYiU_JCYtU", // Linkin Park - Numb

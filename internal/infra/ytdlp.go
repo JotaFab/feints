@@ -4,14 +4,17 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os/exec"
+	"strings"
 	"time"
 
-	"feints/internal/infra/core"
+	"feints/internal/core"
 )
 
 const (
-	YtDlpBin = "yt-dlp"
+	YtDlpBin        = "yt-dlp"
+	MaxSongDuration = 15 * time.Minute
 )
 
 func run(args ...string) (string, string, error) {
@@ -29,9 +32,9 @@ func Search(query string, limit int) ([]core.Song, error) {
 	}
 
 	out, stderr, err := run(
-		"--cookies", "cookies.txt",
 		"--dump-json",
-		fmt.Sprintf("ytsearch%d:music%s", limit, query),
+		"--flat-playlist",
+		fmt.Sprintf("ytsearch%d:music %s", limit, query), // forzamos búsqueda musical
 	)
 	if err != nil {
 		return nil, fmt.Errorf("yt-dlp search error: %w - %s", err, stderr)
@@ -43,21 +46,37 @@ func Search(query string, limit int) ([]core.Song, error) {
 		if len(line) == 0 {
 			continue
 		}
+
 		var raw map[string]any
 		if err := json.Unmarshal(line, &raw); err != nil {
+			slog.Error("error unmarshaling", "error",err)
 			continue
 		}
 
-		s := core.Song{
-			Title:     fmt.Sprint(raw["title"]),
+		title := fmt.Sprint(raw["title"])
+		// --- Filtros anti-basura ---
+		if strings.Contains(strings.ToLower(title), "video") ||
+			strings.Contains(strings.ToLower(title), "trailer") ||
+			strings.Contains(strings.ToLower(title), "full movie") {
+			continue
+		}
+
+		// Duración
+		var duration time.Duration
+		if dur, ok := raw["duration"].(float64); ok {
+			duration = time.Duration(int(dur)) * time.Second
+			if duration > MaxSongDuration {
+				continue // descartamos canciones muy largas
+			}
+		}
+
+		results = append(results, core.Song{
+			Title:     title,
 			Uploader:  fmt.Sprint(raw["uploader"]),
 			Thumbnail: fmt.Sprint(raw["thumbnail"]),
 			URL:       fmt.Sprint(raw["webpage_url"]),
-		}
-		if dur, ok := raw["duration"].(float64); ok {
-			s.Duration = time.Duration(int(dur)) * time.Second
-		}
-		results = append(results, s)
+			Duration:  duration,
+		})
 	}
 	return results, nil
 }
@@ -89,6 +108,7 @@ func DownloadAudio(url, path string) error {
 	_, stderr, err := run(
 		"--cookies", "cookies.txt",
 		"-x", "--audio-format", "mp3",
+		"--add-metadata", "--embed-thumbnail",
 		"--output", path,
 		url,
 	)

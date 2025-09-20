@@ -23,7 +23,7 @@ type DgvoicePlayer struct {
 	Session   *discordgo.Session `json:"-"`
 	GuildID   string             `json:"guild_id"`
 	ChannelID string             `json:"channel_id"`
-	queueA    []core.Song
+	queueA    []*core.Song
 	Queue     chan core.Song  `json:"-"`
 	Control   chan controlCmd `json:"-"`
 	state     PlayerState
@@ -72,11 +72,11 @@ func (p *DgvoicePlayer) AutoPlay() { p.autoplay = true }
 func (p *DgvoicePlayer) AddSong(song core.Song) {
 	p.Logger.Info("Queueing song", "title", song.Title)
 	p.Queue <- song
-	p.queueA = append(p.queueA, song)
+	p.queueA = append(p.queueA, &song)
 }
 
-func (p *DgvoicePlayer) ListQueue() []core.Song {
-	snapshot := make([]core.Song, len(p.queueA))
+func (p *DgvoicePlayer) ListQueue() []*core.Song {
+	snapshot := make([]*core.Song, len(p.queueA))
 	copy(snapshot, p.queueA)
 	return snapshot
 }
@@ -102,13 +102,13 @@ func (p *DgvoicePlayer) stateLoop() {
 				go p.playSong(song)
 			default:
 				if p.autoplay {
-					s := GetRandomLocalSong()
-					ss := core.Song{
-						Title:    s.Title,
-						Path:     s.Path,
-						Duration: s.Duration,
+					s, e := GlobalSongService.GetRandomLocalSong()
+					if e != nil {
+						p.Logger.Error("error getting random local song", "error", e)
+						p.Stop()
+						continue
 					}
-					p.AddSong(ss)
+					p.AddSong(*s)
 				}
 			}
 
@@ -165,11 +165,10 @@ func (p *DgvoicePlayer) cmdHandler(cmd controlCmd) {
 		p.state = Idle
 
 	case cmdStop:
-		p.stopCurrentPlayback()
 		p.Logger.Info("Stopping and clearing queue")
 		p.stopCurrentPlayback()
 		p.Queue = make(chan core.Song, 50)
-		p.queueA = make([]core.Song, 0)
+		p.queueA = make([]*core.Song,0)
 		p.autoplay = false
 		p.state = Idle
 	}
@@ -189,20 +188,29 @@ func (p *DgvoicePlayer) stopCurrentPlayback() {
 
 // --- Reproducir canción ---
 func (p *DgvoicePlayer) playSong(song core.Song) {
+	var err error
+
 	if len(p.queueA) > 0 {
 		p.queueA = p.queueA[1:]
 	} else {
 		p.Logger.Debug("no more songs in queue")
 	}
+	s:= GlobalSongService.cache.GetSong(song.URL)
+	if s != nil {
+		song = *s
+	} else {
 
-	s, err := SongReadyToPlay(song.URL)
-	if err != nil {
-		p.Logger.Error("error downloading the song", "error", err)
-		p.state = Stopped
-		return
+		s, err := GlobalSongService.SongReadyToPlay(song)
+		
+		if err != nil {
+			p.Logger.Error("error downloading the song", "error", err)
+			p.state = Stopped
+			return
+		}
+		song = *s
 	}
 
-	p.Logger.Info("Playing song", "title", s.Title)
+	p.Logger.Info("Playing song", "title", song.Title)
 	p.stopCurrentPlayback() // Retry joining voice channel with a small delay
 	var vc *discordgo.VoiceConnection
 	for i := 0; i < 3; i++ { // Try up to 3 times
@@ -221,7 +229,7 @@ func (p *DgvoicePlayer) playSong(song core.Song) {
 	p.vc = vc
 	p.vc.Speaking(true)
 
-	dgvoice.PlayAudioFile(p.vc, s.Path, p.stopCh)
+	dgvoice.PlayAudioFile(p.vc, song.Path, p.stopCh)
 	// al terminar la canción
 	p.doneCh <- true
 }

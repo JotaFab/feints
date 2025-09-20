@@ -10,7 +10,7 @@ type Player interface {
 	Pause()
 	Resume()
 	Stop()
-	ListQueue() []Song
+	ListQueue() []*Song
 	State() string
 	AutoPlay()
 }
