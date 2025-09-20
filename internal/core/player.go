@@ -12,4 +12,5 @@ type Player interface {
 	Stop()
 	ListQueue() []Song
 	State() string
+	AutoPlay()
 }

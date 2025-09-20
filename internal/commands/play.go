@@ -36,7 +36,6 @@ func PlayCommand(dp core.Player, s *discordgo.Session, i *discordgo.InteractionC
 
 	// Añadir canción a la cola
 	dp.AddSong(core.Song{
-		Title: query, // se puede enriquecer con metadatos de yt-dlp si quieres
 		URL:   query,
 	})
 	dp.Play()
@@ -48,6 +47,18 @@ func PlayCommand(dp core.Player, s *discordgo.Session, i *discordgo.InteractionC
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Content: fmt.Sprintf("🎶 Añadido a la cola: **%s**", query),
+		},
+	})
+}
+
+
+func AutoPlay(dp core.Player, s *discordgo.Session, i *discordgo.InteractionCreate) {
+	dp.AutoPlay()
+	// Responder al usuario
+	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: fmt.Sprintf("Autoplay activado"),
 		},
 	})
 }

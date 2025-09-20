@@ -2,9 +2,11 @@ package infra
 
 import (
 	"feints/internal/core"
+	"log/slog"
+	"time"
+
 	"github.com/bwmarrin/dgvoice"
 	"github.com/bwmarrin/discordgo"
-	"log/slog"
 )
 
 // --- PlayerState ---
@@ -21,12 +23,15 @@ type DgvoicePlayer struct {
 	Session   *discordgo.Session `json:"-"`
 	GuildID   string             `json:"guild_id"`
 	ChannelID string             `json:"channel_id"`
-	Queue     chan core.Song     `json:"-"`
-	Control   chan controlCmd    `json:"-"`
+	queueA    []core.Song
+	Queue     chan core.Song  `json:"-"`
+	Control   chan controlCmd `json:"-"`
 	state     PlayerState
 	Logger    *slog.Logger `json:"-"`
 	vc        *discordgo.VoiceConnection
 	stopCh    chan bool
+	doneCh    chan bool
+	autoplay  bool
 }
 
 type controlCmd string
@@ -49,111 +54,174 @@ func NewDgvoicePlayer(session *discordgo.Session, guildID, channelID string, l *
 		Control:   make(chan controlCmd),
 		state:     Idle,
 		Logger:    l.With("component", "Player", "guild", guildID),
-		stopCh:    make(chan bool, 1),
+		stopCh:    make(chan bool),
+		doneCh:    make(chan bool),
 	}
-	go p.loop()
+	go p.stateLoop()
 	return p
 }
 
 // --- Interface methods ---
-func (p *DgvoicePlayer) Play() {
-	p.Logger.Info("Play() called")
-	p.Control <- cmdPlay
-}
+func (p *DgvoicePlayer) Play()     { p.Control <- cmdPlay }
+func (p *DgvoicePlayer) Next()     { p.Control <- cmdNext }
+func (p *DgvoicePlayer) Pause()    { p.Control <- cmdPause }
+func (p *DgvoicePlayer) Resume()   { p.Control <- cmdResume }
+func (p *DgvoicePlayer) Stop()     { p.Control <- cmdStop }
+func (p *DgvoicePlayer) AutoPlay() { p.autoplay = true }
 
 func (p *DgvoicePlayer) AddSong(song core.Song) {
 	p.Logger.Info("Queueing song", "title", song.Title)
 	p.Queue <- song
+	p.queueA = append(p.queueA, song)
 }
 
-func (p *DgvoicePlayer) Next()   { p.Control <- cmdNext }
-func (p *DgvoicePlayer) Pause()  { p.Control <- cmdPause }
-func (p *DgvoicePlayer) Resume() { p.Control <- cmdResume }
-func (p *DgvoicePlayer) Stop()   { p.Control <- cmdStop }
-
 func (p *DgvoicePlayer) ListQueue() []core.Song {
-	snapshot := []core.Song{}
-	for {
-		select {
-		case s := <-p.Queue:
-			snapshot = append(snapshot, s)
-		default:
-			return snapshot
-		}
-	}
+	snapshot := make([]core.Song, len(p.queueA))
+	copy(snapshot, p.queueA)
+	return snapshot
 }
 
 func (p *DgvoicePlayer) State() string { return string(p.state) }
 
-// --- loop privado ---
-func (p *DgvoicePlayer) loop() {
-	for cmd := range p.Control {
-		switch cmd {
-		case cmdPlay:
-			song := <-p.Queue
-			go p.playSong(song)
-		case cmdPause:
-			p.pause()
-		case cmdResume:
-			p.resume()
-		case cmdNext:
-			p.Logger.Info("Skipping song")
-			if p.vc != nil {
-				p.vc.Speaking(false)
-			}
-			p.stopCh <- true
+// --- Bucle central ---
+func (p *DgvoicePlayer) stateLoop() {
+	p.Logger.Info("State loop started")
 
-		case cmdStop:
-			p.Logger.Info("Stopping and clearing queue")
-			if p.vc != nil {
-				p.vc.Disconnect()
-			}
-			p.stopCh <- true
-			close(p.Queue)
-			return
+	for {
+		select {
+		case cmd := <-p.Control:
+			p.cmdHandler(cmd)
+		default:
 		}
+		switch p.state {
+		case Idle:
+			select {
+			case song := <-p.Queue:
+				p.Logger.Info("Auto-playing next song", "title", song.Title)
+				p.state = Playing
+				go p.playSong(song)
+			default:
+				if p.autoplay {
+					s := GetRandomLocalSong()
+					ss := core.Song{
+						Title:    s.Title,
+						Path:     s.Path,
+						Duration: s.Duration,
+					}
+					p.AddSong(ss)
+				}
+			}
+
+		case Playing:
+			select {
+			case <-p.doneCh:
+				p.Logger.Info("Song finished")
+				p.state = Idle
+			default:
+			}
+		case Paused:
+			time.Sleep(time.Second)
+		case Stopped:
+			time.Sleep(time.Second)
+
+		default:
+		}
+
 	}
 }
 
-func (p *DgvoicePlayer) playSong(song core.Song) {
+// --- Manejo de comandos ---
+func (p *DgvoicePlayer) cmdHandler(cmd controlCmd) {
+	switch cmd {
+	case cmdPlay:
+		if p.state != Playing {
+			select {
+			case song := <-p.Queue:
+				p.Logger.Info("Auto-playing next song", "title", song.Title)
+				p.state = Playing
+				go p.playSong(song)
+			default:
+			}
 
-	s, err := YtdlpBestAudioURL(song.URL)
-	if err != nil {
-		p.Logger.Error("error downloading the song", "error", err)
-		return
-	}
-
-	p.state = Playing
-	p.Logger.Info("Playing song", "title", s.Title)
-	if p.vc == nil {
-		vc, err := p.Session.ChannelVoiceJoin(p.GuildID, p.ChannelID, false, true)
-		if err != nil {
-			p.Logger.Error("Join failed", "error", err)
-			return
 		}
-		p.vc = vc
-	}
-	dgvoice.PlayAudioFile(p.vc, s.Path, p.stopCh)
-	p.Logger.Info("Finished", "title", s.Title)
-	p.state = Idle
-}
 
-func (p *DgvoicePlayer) pause() {
-	if p.state == Playing {
+	case cmdPause:
 		p.state = Paused
 		p.Logger.Info("Paused")
 		if p.vc != nil {
 			p.vc.Speaking(false)
 		}
-	}
-}
 
-func (p *DgvoicePlayer) resume() {
-	if p.state == Paused {
+	case cmdResume:
 		p.state = Playing
 		p.Logger.Info("Resumed")
 		if p.vc != nil {
 			p.vc.Speaking(true)
 		}
+
+	case cmdNext:
+		p.Logger.Info("Skipping song")
+		p.stopCurrentPlayback()
+		p.state = Idle
+
+	case cmdStop:
+		p.stopCurrentPlayback()
+		p.Logger.Info("Stopping and clearing queue")
+		p.stopCurrentPlayback()
+		p.Queue = make(chan core.Song, 50)
+		p.queueA = make([]core.Song, 0)
+		p.autoplay = false
+		p.state = Idle
 	}
+}
+func (p *DgvoicePlayer) stopCurrentPlayback() {
+	// Use a non-blocking select to send stop signal
+	select {
+	case p.stopCh <- true:
+	default:
+	}
+	if p.vc != nil {
+		p.vc.Speaking(false)
+		p.vc.Disconnect()
+		p.vc = nil
+	}
+}
+
+// --- Reproducir canción ---
+func (p *DgvoicePlayer) playSong(song core.Song) {
+	if len(p.queueA) > 0 {
+		p.queueA = p.queueA[1:]
+	} else {
+		p.Logger.Debug("no more songs in queue")
+	}
+
+	s, err := SongReadyToPlay(song.URL)
+	if err != nil {
+		p.Logger.Error("error downloading the song", "error", err)
+		p.state = Stopped
+		return
+	}
+
+	p.Logger.Info("Playing song", "title", s.Title)
+	p.stopCurrentPlayback() // Retry joining voice channel with a small delay
+	var vc *discordgo.VoiceConnection
+	for i := 0; i < 3; i++ { // Try up to 3 times
+		vc, err = p.Session.ChannelVoiceJoin(p.GuildID, p.ChannelID, false, true)
+		if err == nil {
+			break // Success
+		}
+		p.Logger.Error("Join failed, retrying...", "error", err, "attempt", i+1)
+		time.Sleep(2 * time.Second) // Wait before retrying
+	}
+	if err != nil {
+		p.Logger.Error("Join failed", "error", err)
+		p.state = Idle
+		return
+	}
+	p.vc = vc
+	p.vc.Speaking(true)
+
+	dgvoice.PlayAudioFile(p.vc, s.Path, p.stopCh)
+	// al terminar la canción
+	p.doneCh <- true
 }

@@ -19,7 +19,7 @@ func SearchCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 
 	// Llamamos a nuestro wrapper YtdlpSearch
-	results, err := infra.YtdlpSearch(query, 10)
+	results, err := infra.SearchSongs(query, 10)
 	if err != nil {
 		log.Println("[SearchCommand] Error ejecutando yt-dlp:", err)
 		return

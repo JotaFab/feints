@@ -42,7 +42,6 @@ func TestCommand(dp core.Player, s *discordgo.Session, i *discordgo.InteractionC
 	for _, url := range testSongs {
 
 		dp.AddSong(core.Song{
-			Title: url,
 			URL:   url,
 		})
 

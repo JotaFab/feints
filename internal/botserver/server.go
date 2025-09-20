@@ -18,6 +18,7 @@ import (
 type BotServer struct {
 	session *discordgo.Session
 	Log     *slog.Logger
+	players	map[string]core.Player
 }
 
 // NewBotServer crea un nuevo servidor de bots con logger JSON
@@ -26,15 +27,27 @@ func NewBotServer(s *discordgo.Session, logger *slog.Logger) *BotServer {
 	return &BotServer{
 		session: s,
 		Log:     logger,
+		players: make(map[string]core.Player),
 	}
 }
 
 func (bs *BotServer) GetOrCreatePlayer(guildID, channelID string) (core.Player, error) {
-	dp := infra.NewDgvoicePlayer(bs.session, guildID, channelID, bs.Log)
-	
-	bs.Log.Info("Player creado", "guildID", guildID, "channelID", channelID)
-	return dp, nil
+    key := guildID + "_" + channelID
+
+    // si ya existe, devolverlo
+    if player, ok := bs.players[key]; ok {
+        bs.Log.Info("Player encontrado", "guildID", guildID, "channelID", channelID)
+        return player, nil
+    }
+
+    // crear uno nuevo
+    dp := infra.NewDgvoicePlayer(bs.session, guildID, channelID, bs.Log)
+    bs.players[key] = dp
+
+    bs.Log.Info("Player creado", "guildID", guildID, "channelID", channelID)
+    return dp, nil
 }
+
 
 // HandleCommand despacha las interacciones a los comandos
 func (bs *BotServer) HandleCommand(cmd string, s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -90,6 +103,8 @@ func (bs *BotServer) HandleCommand(cmd string, s *discordgo.Session, i *discordg
 		commands.StatusCommand(dp, s, i)
 	case "test":
 		commands.TestCommand(dp, s, i)
+	case "autoplay":
+		commands.AutoPlay(dp,s,i)
 	}
 }
 
@@ -99,13 +114,13 @@ func Run() error {
 	if token == "" {
 		return fmt.Errorf("DISCORD_BOT_TOKEN no está definido")
 	}
-
 	dg, err := discordgo.New("Bot " + token)
 	if err != nil {
 		return fmt.Errorf("error creando sesión de Discord: %v", err)
 	}
-	handler := slog.NewJSONHandler(os.Stdout, nil)
+	handler := slog.NewTextHandler(os.Stdout, nil)
 	log := slog.New(handler)
+	log =log.With("component", "BotServer")
 
 	// Handler de Ready
 	dg.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
@@ -131,6 +146,7 @@ func Run() error {
 			{Name: "clear", Description: "Limpia la cola"},
 			{Name: "status", Description: "Muestra el estado actual"},
 			{Name: "test", Description: "Prueba de carga en la cola"},
+			{Name: "autoplay", Description: "Activa autoplay"},
 		}
 
 		for _, cmd := range commandsToRegister {
