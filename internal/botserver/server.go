@@ -109,7 +109,7 @@ func (bs *BotServer) HandleCommand(cmd string, s *discordgo.Session, i *discordg
 }
 
 // Run inicializa el bot y maneja los eventos
-func Run() error {
+func Run(log*slog.Logger) error {
 	token := os.Getenv("DISCORD_TOKEN")
 	if token == "" {
 		return fmt.Errorf("DISCORD_BOT_TOKEN no está definido")
@@ -118,9 +118,8 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("error creando sesión de Discord: %v", err)
 	}
-	handler := slog.NewTextHandler(os.Stdout, nil)
-	log := slog.New(handler)
-	log =log.With("component", "BotServer")
+	
+	log = log.With("component", "BotServer")
 
 	// Handler de Ready
 	dg.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {

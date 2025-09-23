@@ -24,6 +24,7 @@ type SongCache struct {
 	muSongs    sync.RWMutex
 	muSearch   sync.RWMutex
 }
+
 // --- PreloadSongCache ---
 // Recorre SongsDir y carga las canciones en memoria si tienen metadatos ID3 válidos.
 func PreloadSongCache(c *SongCache) error {
@@ -78,18 +79,9 @@ func PreloadSongCache(c *SongCache) error {
 			URL:      url,
 		}
 		c.AddSong(s)
-
-		// Log completo de metadata
-		slog.Info("cache precargada",
-			"title", title,
-			"uploader", uploader,
-			"duration", dur.String(),
-			"url", url,
-			"file", entry.Name())
 	}
 	return nil
 }
-
 
 var GlobalCache = NewSongCache(30 * time.Minute)
 
@@ -130,7 +122,7 @@ func (c *SongCache) GetSearch(query string) ([]core.Song, error) {
 	t, tsOk := c.timestamps[query]
 	c.muSearch.RUnlock()
 	if !ok || !tsOk || time.Since(t) > c.ttl {
-		songs, err := Search(query,5)
+		songs, err := Search(query, 5)
 		if err == nil {
 			c.AddSearch(query, songs)
 			return c.GetSearch(query)

@@ -6,6 +6,7 @@ require (
 	github.com/bogem/id3v2 v1.2.0
 	github.com/bwmarrin/dgvoice v0.0.0-20210225172318-caaac756e02e
 	github.com/bwmarrin/discordgo v0.29.0
+	github.com/lmittmann/tint v1.1.2
 )
 
 require (
